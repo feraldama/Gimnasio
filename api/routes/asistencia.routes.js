@@ -10,6 +10,7 @@ router.get(
   authMiddleware,
   asistenciaController.estadoAcceso
 );
+router.get("/ranking", authMiddleware, asistenciaController.ranking);
 router.get("/", authMiddleware, asistenciaController.listar);
 router.post("/", authMiddleware, asistenciaController.registrar);
 

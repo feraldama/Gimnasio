@@ -48,3 +48,19 @@ exports.listar = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.ranking = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    if (!fechaDesde || !fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde y fechaHasta son requeridos" });
+    }
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
+    const data = await Asistencia.ranking(fechaDesde, fechaHasta, limit);
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

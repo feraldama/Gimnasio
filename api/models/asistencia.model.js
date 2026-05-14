@@ -121,6 +121,39 @@ const Asistencia = {
   },
 
   /**
+   * Ranking de asistencia por cliente en un rango de fechas.
+   * Devuelve total de asistencias, días distintos y primera/última fecha.
+   * Ordenado DESC por total. Útil para detectar clientes comprometidos
+   * y los que están bajando frecuencia.
+   */
+  ranking: (fechaDesde, fechaHasta, limit = 50) => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT
+          c.ClienteId,
+          c.ClienteNombre,
+          c.ClienteApellido,
+          c.ClienteTelefono,
+          COUNT(*) AS cantidad,
+          COUNT(DISTINCT a.AsistenciaFecha) AS diasDistintos,
+          MIN(a.AsistenciaFecha) AS primeraFecha,
+          MAX(a.AsistenciaFecha) AS ultimaFecha
+        FROM asistencia a
+        INNER JOIN clientes c ON c.ClienteId = a.ClienteId
+        WHERE DATE(a.AsistenciaFecha) >= DATE(?)
+          AND DATE(a.AsistenciaFecha) <= DATE(?)
+        GROUP BY c.ClienteId, c.ClienteNombre, c.ClienteApellido, c.ClienteTelefono
+        ORDER BY cantidad DESC, diasDistintos DESC
+        LIMIT ?
+      `;
+      db.query(sql, [fechaDesde, fechaHasta, Number(limit)], (err, results) => {
+        if (err) return reject(err);
+        resolve(results);
+      });
+    });
+  },
+
+  /**
    * Cuántas asistencias tiene un cliente en el día dado (o hoy).
    * Para mostrar advertencia "Ya registró entrada hoy a las HH:MM" en UI.
    */

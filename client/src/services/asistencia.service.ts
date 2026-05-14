@@ -58,3 +58,32 @@ export const listarAsistenciasDelDia = async (fecha?: string) => {
     throw axiosError.response?.data || { message: "Error al listar asistencias" };
   }
 };
+
+export interface RankingAsistenciaRow {
+  ClienteId: number;
+  ClienteNombre: string;
+  ClienteApellido: string;
+  ClienteTelefono: string;
+  cantidad: number;
+  diasDistintos: number;
+  primeraFecha: string;
+  ultimaFecha: string;
+}
+
+export const getRankingAsistencia = async (
+  fechaDesde: string,
+  fechaHasta: string,
+  limit = 50
+): Promise<RankingAsistenciaRow[]> => {
+  try {
+    const response = await api.get("/asistencia/ranking", {
+      params: { fechaDesde, fechaHasta, limit },
+    });
+    return response.data?.data || [];
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw axiosError.response?.data || {
+      message: "Error al obtener ranking de asistencia",
+    };
+  }
+};

@@ -1,6 +1,5 @@
 {
   "postman.settings.dotenv-detection-notification-visibility": false,
-  "terminal.integrated.defaultProfile.windows": "Git Bash",
   "terminal.integrated.profiles.windows": {
     "Git Bash": {
       "path": [

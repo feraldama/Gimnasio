@@ -15,6 +15,34 @@ import {
   getRegistrosDiariosCajaPorRango,
   type RegistroDiarioCajaRow,
 } from "../../services/registros.service";
+import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
+import { getReporteCobranza } from "../../services/pagos.service";
+import {
+  getRankingAsistencia,
+  type RankingAsistenciaRow,
+} from "../../services/asistencia.service";
+
+interface SuscripcionProximaVencer {
+  SuscripcionId: number;
+  ClienteId: number;
+  ClienteNombre: string;
+  ClienteApellido: string;
+  PlanNombre: string;
+  PlanPrecio: number;
+  SuscripcionFechaInicio: string;
+  SuscripcionFechaFin: string;
+  SuscripcionEstado: string;
+  EstadoPago: "PAGADA" | "PENDIENTE";
+}
+
+interface CobranzaPeriodoRow {
+  periodo: string;
+  cantidad: number;
+  contado: number;
+  pos: number;
+  transferencia: number;
+  total: number;
+}
 
 interface DeudaCliente {
   ClienteId: number;
@@ -290,6 +318,30 @@ const ReportesPage: React.FC = () => {
     return primerDiaMes.toISOString().split("T")[0];
   });
   const [fechaHastaTop, setFechaHastaTop] = useState(() => getHoyISO());
+
+  // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
+  const [reporteActivo, setReporteActivo] = useState<string | null>(null);
+
+  // Suscripciones próximas a vencer
+  const [diasProximas, setDiasProximas] = useState(30);
+
+  // Cobranza por período
+  const [fechaDesdeCobranza, setFechaDesdeCobranza] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaCobranza, setFechaHastaCobranza] = useState(() => getHoyISO());
+  const [agruparCobranzaPor, setAgruparCobranzaPor] = useState<"dia" | "semana" | "mes">("dia");
+
+  // Ranking de asistencia
+  const [fechaDesdeRank, setFechaDesdeRank] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaRank, setFechaHastaRank] = useState(() => getHoyISO());
+  const [limitRank, setLimitRank] = useState(20);
 
   const totalPaginasCierre = Math.max(
     1,
@@ -1203,6 +1255,308 @@ const ReportesPage: React.FC = () => {
     }
   };
 
+  // ===== Reportes de Gimnasio =====
+
+  const handleGenerarReporteProximasVencer = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getSuscripcionesProximasAVencer(diasProximas);
+      const suscripciones: SuscripcionProximaVencer[] = res.data || res || [];
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Suscripciones próximas a vencer (${diasProximas} días)`, 14, 18);
+      doc.setFontSize(10);
+      doc.text(
+        `Generado: ${new Date().toLocaleDateString("es-PY")} — ${suscripciones.length} suscripcion(es)`,
+        14,
+        25,
+      );
+
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      // SuscripcionFechaFin viene del backend como ISO completo
+      // (ej. "2026-05-13T03:00:00.000Z") o como "YYYY-MM-DD" según el driver.
+      // Normalizo a fecha local sin horas para que el diff de días sea entero.
+      const parseFechaFin = (s: string): Date => {
+        if (!s) return new Date(NaN);
+        // Si parece "YYYY-MM-DD" (sin T), interpreto como local
+        const soloFecha = /^\d{4}-\d{2}-\d{2}$/.test(s);
+        const d = soloFecha ? new Date(s + "T00:00:00") : new Date(s);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      };
+      const rows = suscripciones.map((s) => {
+        const fin = parseFechaFin(s.SuscripcionFechaFin);
+        const diasRestantes = Math.round(
+          (fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24),
+        );
+        const estado = Number.isFinite(diasRestantes)
+          ? diasRestantes < 0
+            ? `Vencida hace ${-diasRestantes}d`
+            : diasRestantes === 0
+              ? "Vence hoy"
+              : `${diasRestantes} días`
+          : "-";
+        return [
+          `${s.ClienteNombre} ${s.ClienteApellido}`.trim(),
+          s.PlanNombre,
+          formatDateDDMMYYYY(s.SuscripcionFechaFin),
+          estado,
+          s.EstadoPago,
+          formatMiles(s.PlanPrecio),
+        ];
+      });
+
+      autoTable(doc, {
+        head: [["Cliente", "Plan", "Vence", "Estado", "Pago", "Precio"]],
+        body: rows,
+        startY: 32,
+        theme: "grid",
+        headStyles: { fillColor: [220, 38, 38], fontSize: 9 },
+        styles: { fontSize: 9 },
+        margin: { left: 14, right: 14 },
+      });
+
+      let y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+      const pendientes = suscripciones.filter((s) => s.EstadoPago === "PENDIENTE").length;
+      const vencidas = rows.filter((r) => String(r[3]).startsWith("Vencida")).length;
+      doc.setFontSize(11);
+      doc.text("RESUMEN", 14, y);
+      y += 6;
+      doc.setFontSize(10);
+      doc.text(`Total: ${suscripciones.length}  |  Vencidas: ${vencidas}  |  Pago pendiente: ${pendientes}`, 14, y);
+
+      doc.save(`suscripciones_proximas_vencer_${diasProximas}d.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e?.message || "Error al generar reporte de próximas a vencer");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerarReporteCobranza = async () => {
+    if (!fechaDesdeCobranza || !fechaHastaCobranza) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeCobranza) > new Date(fechaHastaCobranza)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getReporteCobranza(
+        fechaDesdeCobranza,
+        fechaHastaCobranza,
+        agruparCobranzaPor,
+      );
+      // El endpoint /pagos/reporte responde { data: { filas, totales }, agruparPor, ... }
+      const payload = res?.data ?? res ?? {};
+      const filas: CobranzaPeriodoRow[] = payload.filas || [];
+      const totales = payload.totales || {
+        contado: 0,
+        pos: 0,
+        transferencia: 0,
+        total: 0,
+        cantidad: 0,
+      };
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Cobranza de suscripciones por ${agruparCobranzaPor}`, 14, 18);
+      doc.setFontSize(10);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeCobranza)} al ${formatearFecha(fechaHastaCobranza)}`,
+        14,
+        25,
+      );
+
+      // Cuando se agrupa por día, el backend devuelve un Date (DATE(...)) que
+      // viaja como ISO completo. Para semana/mes ya viene formateado por SQL.
+      const fmtPeriodo = (p: string): string => {
+        if (agruparCobranzaPor !== "dia") return p;
+        if (!p) return "-";
+        return /^\d{4}-\d{2}-\d{2}$/.test(p)
+          ? formatDateDDMMYYYY(p)
+          : formatDateDDMMYYYY(new Date(p));
+      };
+      const rows = filas.map((f) => [
+        fmtPeriodo(f.periodo),
+        String(f.cantidad),
+        formatMiles(f.contado),
+        formatMiles(f.pos),
+        formatMiles(f.transferencia),
+        formatMiles(f.total),
+      ]);
+
+      autoTable(doc, {
+        head: [["Período", "Pagos", "Contado", "POS", "Transfer", "Total"]],
+        body: rows,
+        startY: 32,
+        theme: "grid",
+        headStyles: { fillColor: [16, 185, 129], fontSize: 9 },
+        styles: { fontSize: 9 },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          1: { halign: "right" },
+          2: { halign: "right" },
+          3: { halign: "right" },
+          4: { halign: "right" },
+          5: { halign: "right" },
+        },
+      });
+
+      let y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+      doc.setFontSize(11);
+      doc.text("TOTALES DEL PERÍODO", 14, y);
+      y += 6;
+      doc.setFontSize(10);
+      doc.text(
+        `Pagos: ${totales.cantidad}  |  Contado: ${formatMiles(totales.contado)}  |  POS: ${formatMiles(totales.pos)}  |  Transfer: ${formatMiles(totales.transferencia)}`,
+        14,
+        y,
+      );
+      y += 6;
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Total: Gs. ${formatMiles(totales.total)}`, 14, y);
+      doc.setFont("helvetica", "normal");
+
+      doc.save(`cobranza_${agruparCobranzaPor}_${fechaDesdeCobranza}_${fechaHastaCobranza}.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e?.message || "Error al generar reporte de cobranza");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerarReporteRanking = async () => {
+    if (!fechaDesdeRank || !fechaHastaRank) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeRank) > new Date(fechaHastaRank)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data: RankingAsistenciaRow[] = await getRankingAsistencia(
+        fechaDesdeRank,
+        fechaHastaRank,
+        limitRank,
+      );
+
+      // Días totales del período (para calcular % de asistencia)
+      const desde = new Date(fechaDesdeRank + "T00:00:00");
+      const hasta = new Date(fechaHastaRank + "T00:00:00");
+      const diasPeriodo = Math.max(
+        1,
+        Math.floor((hasta.getTime() - desde.getTime()) / (1000 * 60 * 60 * 24)) + 1,
+      );
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Ranking de asistencia (Top ${limitRank})`, 14, 18);
+      doc.setFontSize(10);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeRank)} al ${formatearFecha(fechaHastaRank)} (${diasPeriodo} días)`,
+        14,
+        25,
+      );
+
+      const rows = data.map((r, i) => {
+        const pct = ((r.diasDistintos / diasPeriodo) * 100).toFixed(0);
+        return [
+          String(i + 1),
+          `${r.ClienteNombre} ${r.ClienteApellido}`.trim(),
+          r.ClienteTelefono || "-",
+          String(r.cantidad),
+          String(r.diasDistintos),
+          `${pct}%`,
+          formatDateDDMMYYYY(r.ultimaFecha),
+        ];
+      });
+
+      autoTable(doc, {
+        head: [
+          [
+            "#",
+            "Cliente",
+            "Teléfono",
+            "Total",
+            "Días",
+            "% Asist.",
+            "Última",
+          ],
+        ],
+        body: rows,
+        startY: 32,
+        theme: "grid",
+        headStyles: { fillColor: [99, 102, 241], fontSize: 9 },
+        styles: { fontSize: 9 },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "right" },
+          1: { cellWidth: "auto" },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 18, halign: "right" },
+          4: { cellWidth: 18, halign: "right" },
+          5: { cellWidth: 20, halign: "right" },
+          6: { cellWidth: 24, halign: "right" },
+        },
+      });
+
+      const totalAsist = data.reduce((acc, r) => acc + r.cantidad, 0);
+      let y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+      doc.setFontSize(11);
+      doc.text("RESUMEN", 14, y);
+      y += 6;
+      doc.setFontSize(10);
+      doc.text(
+        `Clientes en ranking: ${data.length}  |  Asistencias totales: ${totalAsist}  |  Promedio por cliente: ${data.length > 0 ? (totalAsist / data.length).toFixed(1) : 0}`,
+        14,
+        y,
+      );
+
+      doc.save(`ranking_asistencia_${fechaDesdeRank}_${fechaHastaRank}.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e?.message || "Error al generar ranking de asistencia");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const exportarCierrePDF = async () => {
     if (resumenesCierre.length === 0) return;
     const { jsPDF, autoTable } = await loadPdf();
@@ -1301,255 +1655,218 @@ const ReportesPage: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
   };
 
+  // Metadata de las tarjetas (para grid + abrir modal)
+  const renderCard = (
+    titulo: string,
+    descripcion: string,
+    icono: string,
+    accent: string,
+    onClick: () => void,
+  ) => (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className={`text-left bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:${accent} hover:shadow-md transition group disabled:opacity-50 disabled:cursor-not-allowed`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="text-2xl leading-none mt-0.5">{icono}</div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-slate-900 text-sm leading-snug">
+            {titulo}
+          </h3>
+          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+            {descripcion}
+          </p>
+        </div>
+      </div>
+    </button>
+  );
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold mb-8 text-center">Reportes</h1>
-      <div className="flex flex-col items-center gap-8 max-w-2xl mx-auto">
-        {/* Reporte de Stock valorizado */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Stock valorizado (capital inmovilizado)
-          </h2>
-          <p className="text-gray-600 mb-4 text-sm">
-            Lista los productos con stock, muestra cantidad en cajas y unidades,
-            precio de costo por caja y cuánto vale el stock de cada producto a
-            precio de costo. Incluye desglose por almacén y, al final, el total
-            de capital inmovilizado. Ordenado por valor DESC.
-          </p>
-          <button
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-4 rounded-lg text-lg shadow transition disabled:opacity-50"
-            onClick={handleGenerarReporteStock}
-            disabled={loading}
-          >
-            GENERAR REPORTE DE STOCK
-          </button>
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Reportes</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Elegí un reporte para generarlo en PDF.
+        </p>
+      </div>
+
+      {error && (
+        <div className="text-red-700 bg-red-50 border border-red-200 p-3 rounded-md mb-4 text-sm">
+          {error}
         </div>
+      )}
 
-        {/* Reporte de Créditos Pendientes */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Créditos Pendientes a Cobrar
-          </h2>
-          <button
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-lg shadow transition disabled:opacity-50"
-            onClick={handleGenerarPDF}
-            disabled={loading}
-          >
-            GENERAR REPORTE
-          </button>
-        </div>
+      <div className="space-y-8">
+        {/* === Sección Gimnasio === */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Gimnasio
+            </h2>
+            <span className="text-xs text-slate-400">3 reportes</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {renderCard(
+              "Suscripciones próximas a vencer",
+              "Clientes con suscripción que vence en los próximos N días, con estado de pago.",
+              "🔔",
+              "border-rose-300",
+              () => {
+                setError(null);
+                setReporteActivo("proximas");
+              },
+            )}
+            {renderCard(
+              "Cobranza por período",
+              "Totales de pagos agrupados por día/semana/mes, desglosando Contado, POS y Transferencia.",
+              "📊",
+              "border-emerald-300",
+              () => {
+                setError(null);
+                setReporteActivo("cobranza");
+              },
+            )}
+            {renderCard(
+              "Ranking de asistencia",
+              "Top de clientes más frecuentes del período con días asistidos y % de asistencia.",
+              "🏃",
+              "border-indigo-300",
+              () => {
+                setError(null);
+                setReporteActivo("ranking");
+              },
+            )}
+          </div>
+        </section>
 
-        {/* Reporte de Ventas por Cliente */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Reporte de Ventas por Cliente
-          </h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cliente
-              </label>
-              <select
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                value={clienteSeleccionado}
-                onChange={(e) => setClienteSeleccionado(e.target.value)}
-                disabled={loading}
-              >
-                <option value="TODOS">TODOS</option>
-                {clientes.map((cliente) => (
-                  <option key={cliente.ClienteId} value={cliente.ClienteId}>
-                    {cliente.ClienteNombre} {cliente.ClienteApellido}
-                    {cliente.ClienteRUC ? ` - ${cliente.ClienteRUC}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+        {/* === Sección Ventas y Stock === */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Ventas y stock
+            </h2>
+            <span className="text-xs text-slate-400">5 reportes</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {renderCard(
+              "Stock valorizado",
+              "Productos con stock + capital inmovilizado a precio de costo. Desglose por almacén.",
+              "📦",
+              "border-teal-300",
+              () => {
+                setError(null);
+                handleGenerarReporteStock();
+              },
+            )}
+            {renderCard(
+              "Créditos pendientes",
+              "Lista de saldos a cobrar por cliente con totales por venta.",
+              "💳",
+              "border-green-300",
+              () => {
+                setError(null);
+                handleGenerarPDF();
+              },
+            )}
+            {renderCard(
+              "Ventas por cliente",
+              "Detalle de ventas por cliente (o todos), con pagos de crédito y totales por tipo.",
+              "🧾",
+              "border-blue-300",
+              () => {
+                setError(null);
+                setReporteActivo("ventas");
+              },
+            )}
+            {renderCard(
+              "Productos vendidos y comprados",
+              "Por período: cantidades, monto facturado, costo, ganancia y margen %.",
+              "🔁",
+              "border-blue-300",
+              () => {
+                setError(null);
+                setReporteActivo("movimientos");
+              },
+            )}
+            {renderCard(
+              "Productos más vendidos",
+              "Ranking de productos por cantidad vendida con precio venta, costo y stock actual.",
+              "🏆",
+              "border-indigo-300",
+              () => {
+                setError(null);
+                setReporteActivo("masvendidos");
+              },
+            )}
+          </div>
+        </section>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha Desde
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  value={fechaDesde}
-                  onChange={(e) => setFechaDesde(e.target.value)}
-                  disabled={loading}
-                />
+        {/* === Sección Caja === */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Caja
+            </h2>
+            <span className="text-xs text-slate-400">1 reporte</span>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="text-2xl leading-none">💼</div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-900 text-sm">
+                  Cierre de caja por rango
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Apertura, ingresos por método, egresos y diferencia de cada cierre del período.
+                </p>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha Hasta
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  disabled={loading}
-                />
-              </div>
             </div>
-
-            <button
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg text-lg shadow transition disabled:opacity-50"
-              onClick={handleGenerarReporteVentas}
-              disabled={loading}
-            >
-              GENERAR REPORTE
-            </button>
-          </div>
-        </div>
-
-        {/* Reporte de productos vendidos y comprados */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Productos vendidos y comprados
-          </h2>
-          <p className="text-gray-600 mb-4 text-sm">
-            Para el rango seleccionado, lista todos los productos con
-            movimiento e informa cantidad vendida, cantidad comprada, monto
-            facturado, costo, ganancia y margen %. Al final, un resumen general
-            del período.
-          </p>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="flex flex-wrap items-end gap-3 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fecha Desde
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                value={fechaDesdeMov}
-                onChange={(e) => setFechaDesdeMov(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fecha Hasta
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                value={fechaHastaMov}
-                onChange={(e) => setFechaHastaMov(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-          </div>
-          <button
-            className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-4 rounded-lg text-lg shadow transition disabled:opacity-50"
-            onClick={handleGenerarReporteMovimientos}
-            disabled={loading}
-          >
-            GENERAR REPORTE
-          </button>
-        </div>
-
-        {/* Reporte de productos más vendidos */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Productos más vendidos
-          </h2>
-          <p className="text-gray-600 mb-4 text-sm">
-            Lista los productos vendidos en el rango seleccionado, ordenados de
-            más vendido a menos vendido. La cantidad se expresa en cajas y
-            unidades según la cantidad por caja de cada producto (ej. 15
-            unidades con caja de 12 = 1 caja y 3 unidades). Incluye precio de
-            venta, precio de costo, ganancia y stock actual.
-          </p>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fecha Desde
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                value={fechaDesdeTop}
-                onChange={(e) => setFechaDesdeTop(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fecha Hasta
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                value={fechaHastaTop}
-                onChange={(e) => setFechaHastaTop(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-          </div>
-          <button
-            className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-bold py-4 rounded-lg text-lg shadow transition disabled:opacity-50"
-            onClick={handleGenerarReporteMasVendidos}
-            disabled={loading}
-          >
-            GENERAR REPORTE
-          </button>
-        </div>
-
-        {/* Reporte de cierre de caja por rango de fechas */}
-        <div className="w-full bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">
-            Reporte de cierre de caja por rango de fechas
-          </h2>
-          <p className="text-gray-600 mb-4 text-sm">
-            Obtenga la misma información del cierre diario para un período (ej.
-            julio a octubre 2025). Seleccione el rango y genere el reporte.
-          </p>
-          <div className="flex flex-wrap items-end gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 Desde
               </label>
               <input
                 type="date"
                 value={fechaDesdeCierre}
                 onChange={(e) => setFechaDesdeCierre(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={loading}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 Hasta
               </label>
               <input
                 type="date"
                 value={fechaHastaCierre}
                 onChange={(e) => setFechaHastaCierre(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={loading}
               />
             </div>
             <button
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg shadow transition disabled:opacity-50"
+              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition disabled:opacity-50"
               onClick={generarReporteCierre}
               disabled={loading}
             >
-              {loading ? "Cargando…" : "Generar reporte"}
+              {loading ? "Cargando…" : "Generar"}
             </button>
             {resumenesCierre.length > 0 && (
               <button
-                className="bg-slate-700 hover:bg-slate-800 text-white font-semibold py-2 px-6 rounded-lg shadow transition"
+                className="bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition"
                 onClick={exportarCierrePDF}
               >
-                Exportar a PDF
+                Exportar PDF
               </button>
             )}
           </div>
 
           {resumenesCierre.length > 0 && (
             <>
-              <p className="text-sm text-gray-500 mb-2">
+              <p className="text-xs text-slate-500 mb-2">
                 {resumenesCierre.length} cierre(s) en el período. Página{" "}
                 {paginaCierre} de {totalPaginasCierre}.
               </p>
@@ -1729,17 +2046,323 @@ const ReportesPage: React.FC = () => {
               </div>
             </>
           )}
-        </div>
-
-        {loading && (
-          <div className="text-center text-gray-600">Generando PDF...</div>
-        )}
-        {error && (
-          <div className="text-red-600 bg-red-50 p-4 rounded-lg w-full">
-            {error}
           </div>
-        )}
+        </section>
       </div>
+
+      {/* Loading overlay durante generación */}
+      {loading && (
+        <div className="fixed top-4 right-4 bg-slate-900 text-white text-sm font-medium px-4 py-2 rounded-md shadow-lg z-50">
+          Generando reporte…
+        </div>
+      )}
+
+      {/* Modal de configuración de reportes */}
+      {reporteActivo && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4"
+          onClick={() => !loading && setReporteActivo(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">
+                {reporteActivo === "proximas" && "Suscripciones próximas a vencer"}
+                {reporteActivo === "cobranza" && "Cobranza por período"}
+                {reporteActivo === "ranking" && "Ranking de asistencia"}
+                {reporteActivo === "ventas" && "Ventas por cliente"}
+                {reporteActivo === "movimientos" && "Productos vendidos y comprados"}
+                {reporteActivo === "masvendidos" && "Productos más vendidos"}
+              </h3>
+              <button
+                onClick={() => setReporteActivo(null)}
+                className="text-slate-400 hover:text-slate-700 text-2xl leading-none p-0 w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100"
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            {reporteActivo === "proximas" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Vence en los próximos
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={diasProximas}
+                      onChange={(e) => setDiasProximas(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-24 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                    <span className="text-sm text-slate-600">días</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    También incluye las vencidas en los últimos 7 días.
+                  </p>
+                </div>
+                <button
+                  onClick={handleGenerarReporteProximasVencer}
+                  disabled={loading}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "cobranza" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeCobranza}
+                      onChange={(e) => setFechaDesdeCobranza(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaCobranza}
+                      onChange={(e) => setFechaHastaCobranza(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Agrupar por
+                  </label>
+                  <div className="flex gap-2">
+                    {(["dia", "semana", "mes"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setAgruparCobranzaPor(opt)}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium border transition ${
+                          agruparCobranzaPor === opt
+                            ? "bg-emerald-600 text-white border-emerald-600"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {opt === "dia" ? "Día" : opt === "semana" ? "Semana" : "Mes"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteCobranza}
+                  disabled={loading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "ranking" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeRank}
+                      onChange={(e) => setFechaDesdeRank(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaRank}
+                      onChange={(e) => setFechaHastaRank(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Top clientes
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={200}
+                    value={limitRank}
+                    onChange={(e) => setLimitRank(Math.max(5, parseInt(e.target.value, 10) || 5))}
+                    className="w-32 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                    disabled={loading}
+                  />
+                </div>
+                <button
+                  onClick={handleGenerarReporteRanking}
+                  disabled={loading}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "ventas" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Cliente
+                  </label>
+                  <select
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                    value={clienteSeleccionado}
+                    onChange={(e) => setClienteSeleccionado(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="TODOS">TODOS</option>
+                    {clientes.map((cliente) => (
+                      <option key={cliente.ClienteId} value={cliente.ClienteId}>
+                        {cliente.ClienteNombre} {cliente.ClienteApellido}
+                        {cliente.ClienteRUC ? ` - ${cliente.ClienteRUC}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesde}
+                      onChange={(e) => setFechaDesde(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHasta}
+                      onChange={(e) => setFechaHasta(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteVentas}
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "movimientos" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeMov}
+                      onChange={(e) => setFechaDesdeMov(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaMov}
+                      onChange={(e) => setFechaHastaMov(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteMovimientos}
+                  disabled={loading}
+                  className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "masvendidos" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeTop}
+                      onChange={(e) => setFechaDesdeTop(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaTop}
+                      onChange={(e) => setFechaHastaTop(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteMasVendidos}
+                  disabled={loading}
+                  className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
