@@ -1,0 +1,376 @@
+import { useEffect, useState } from "react";
+import SearchButton from "../common/Input/SearchButton";
+import ActionButton from "../common/Button/ActionButton";
+import DataTable from "../common/Table/DataTable";
+import { PlusIcon } from "@heroicons/react/24/outline";
+import { formatMiles } from "../../utils/utils";
+
+interface Plan {
+  id: string | number;
+  PlanId: string | number;
+  PlanNombre: string;
+  PlanDuracion: number;
+  PlanPrecio: number;
+  PlanPermiteClases: boolean | number;
+  PlanActivo: boolean | number;
+  [key: string]: unknown;
+}
+
+interface Pagination {
+  totalItems: number;
+}
+
+interface PlanesListProps {
+  planes: Plan[];
+  onDelete?: (item: Plan) => void;
+  onEdit?: (item: Plan) => void;
+  onCreate?: () => void;
+  pagination?: Pagination;
+  onSearch: (value: string) => void;
+  searchTerm: string;
+  onKeyPress?: React.KeyboardEventHandler<HTMLInputElement>;
+  onSearchSubmit: () => void;
+  isModalOpen: boolean;
+  onCloseModal: () => void;
+  currentPlan?: Plan | null;
+  onSubmit: (formData: Plan) => void;
+  sortKey?: string;
+  sortOrder?: "asc" | "desc";
+  onSort?: (key: string, order: "asc" | "desc") => void;
+}
+
+export default function PlanesList({
+  planes,
+  onDelete,
+  onEdit,
+  onCreate,
+  pagination,
+  onSearch,
+  searchTerm,
+  onKeyPress,
+  onSearchSubmit,
+  isModalOpen,
+  onCloseModal,
+  currentPlan,
+  onSubmit,
+  sortKey,
+  sortOrder,
+  onSort,
+}: PlanesListProps) {
+  const [formData, setFormData] = useState({
+    id: "",
+    PlanId: "",
+    PlanNombre: "",
+    PlanDuracion: 0,
+    PlanPrecio: 0,
+    PlanPermiteClases: false,
+    PlanActivo: true,
+  });
+
+  useEffect(() => {
+    if (currentPlan) {
+      setFormData({
+        id: String(currentPlan.id ?? currentPlan.PlanId),
+        PlanId: String(currentPlan.PlanId),
+        PlanNombre: currentPlan.PlanNombre,
+        PlanDuracion: currentPlan.PlanDuracion,
+        PlanPrecio: currentPlan.PlanPrecio,
+        PlanPermiteClases:
+          currentPlan.PlanPermiteClases === 1 ||
+          currentPlan.PlanPermiteClases === true,
+        PlanActivo:
+          currentPlan.PlanActivo === 1 || currentPlan.PlanActivo === true,
+      });
+    } else {
+      setFormData({
+        id: "",
+        PlanId: "",
+        PlanNombre: "",
+        PlanDuracion: 0,
+        PlanPrecio: 0,
+        PlanPermiteClases: false,
+        PlanActivo: true,
+      });
+    }
+  }, [currentPlan]);
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]:
+        type === "checkbox"
+          ? (e.target as HTMLInputElement).checked
+          : name === "PlanDuracion" || name === "PlanPrecio"
+          ? Number(value)
+          : value,
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onCloseModal();
+    }
+  };
+
+  const columns = [
+    { key: "PlanId", label: "ID" },
+    { key: "PlanNombre", label: "Nombre" },
+    {
+      key: "PlanDuracion",
+      label: "Duración (días)",
+      render: (plan: Plan) => `${plan.PlanDuracion}`,
+    },
+    {
+      key: "PlanPrecio",
+      label: "Precio",
+      render: (plan: Plan) => `Gs. ${formatMiles(plan.PlanPrecio)}`,
+    },
+    {
+      key: "PlanPermiteClases",
+      label: "Permite Clases",
+      render: (plan: Plan) =>
+        plan.PlanPermiteClases === 1 || plan.PlanPermiteClases === true
+          ? "Sí"
+          : "No",
+    },
+    {
+      key: "PlanActivo",
+      label: "Activo",
+      render: (plan: Plan) =>
+        plan.PlanActivo === 1 || plan.PlanActivo === true ? "Sí" : "No",
+    },
+  ];
+
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="flex-1">
+          <SearchButton
+            searchTerm={searchTerm}
+            onSearch={onSearch}
+            onKeyPress={onKeyPress}
+            onSearchSubmit={onSearchSubmit}
+            placeholder="Buscar planes"
+          />
+        </div>
+        <div className="py-4">
+          {onCreate && (
+            <ActionButton
+              label="Nuevo Plan"
+              onClick={onCreate}
+              icon={PlusIcon}
+            />
+          )}
+        </div>
+      </div>
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-sm text-gray-600">
+          Mostrando {planes.length} de {pagination?.totalItems} planes
+        </div>
+      </div>
+      <DataTable<Plan>
+        columns={columns}
+        data={planes}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        emptyMessage="No se encontraron planes"
+        sortKey={sortKey}
+        sortOrder={sortOrder}
+        onSort={onSort}
+      />
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={handleBackdropClick}
+        >
+          <div className="absolute inset-0 bg-black opacity-50" />
+          <div className="relative w-full max-w-2xl max-h-full z-10">
+            <form
+              onSubmit={handleSubmit}
+              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between p-4 border-b rounded-t">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {currentPlan
+                    ? `Editar plan: ${currentPlan.PlanId}`
+                    : "Crear nuevo plan"}
+                </h3>
+                <button
+                  type="button"
+                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
+                  onClick={onCloseModal}
+                >
+                  <svg
+                    className="w-3 h-3"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 14 14"
+                  >
+                    <path
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-6 gap-6">
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanNombre"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Nombre
+                    </label>
+                    <input
+                      type="text"
+                      name="PlanNombre"
+                      id="PlanNombre"
+                      value={formData.PlanNombre}
+                      onChange={(e) => {
+                        const value = e.target.value.toUpperCase();
+                        handleInputChange({
+                          target: {
+                            name: "PlanNombre",
+                            value: value,
+                          },
+                        } as React.ChangeEvent<HTMLInputElement>);
+                      }}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanDuracion"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Duración (días)
+                    </label>
+                    <input
+                      type="number"
+                      name="PlanDuracion"
+                      id="PlanDuracion"
+                      value={formData.PlanDuracion || ""}
+                      placeholder="30"
+                      onChange={handleInputChange}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      min="1"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanPrecio"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Precio
+                    </label>
+                    <input
+                      type="text"
+                      name="PlanPrecio"
+                      id="PlanPrecio"
+                      value={
+                        formData.PlanPrecio
+                          ? formatMiles(formData.PlanPrecio)
+                          : ""
+                      }
+                      placeholder="0"
+                      inputMode="numeric"
+                      onChange={(e) => {
+                        const raw = e.target.value
+                          .replace(/\./g, "")
+                          .replace(/\s/g, "");
+                        if (raw === "") {
+                          setFormData((prev) => ({ ...prev, PlanPrecio: 0 }));
+                          return;
+                        }
+                        const num = Number(raw);
+                        if (!isNaN(num)) {
+                          setFormData((prev) => ({ ...prev, PlanPrecio: num }));
+                        }
+                      }}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanPermiteClases"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Permite Clases
+                    </label>
+                    <select
+                      name="PlanPermiteClases"
+                      id="PlanPermiteClases"
+                      value={formData.PlanPermiteClases ? "1" : "0"}
+                      onChange={(e) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          PlanPermiteClases: e.target.value === "1",
+                        }));
+                      }}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    >
+                      <option value="0">No</option>
+                      <option value="1">Sí</option>
+                    </select>
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanActivo"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Activo
+                    </label>
+                    <select
+                      name="PlanActivo"
+                      id="PlanActivo"
+                      value={formData.PlanActivo ? "1" : "0"}
+                      onChange={(e) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          PlanActivo: e.target.value === "1",
+                        }));
+                      }}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    >
+                      <option value="0">No</option>
+                      <option value="1">Sí</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
+                <ActionButton
+                  label={currentPlan ? "Actualizar" : "Crear"}
+                  type="submit"
+                />
+                <ActionButton
+                  label="Cancelar"
+                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10"
+                  onClick={onCloseModal}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

@@ -1,0 +1,33 @@
+{
+  "postman.settings.dotenv-detection-notification-visibility": false,
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
+  "terminal.integrated.profiles.windows": {
+    "Git Bash": {
+      "path": [
+        "D:\\Archivos de programa\\Git\\bin\\bash.exe",
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+        "${env:ProgramFiles}\\Git\\bin\\bash.exe",
+        "${env:ProgramFiles(x86)}\\Git\\bin\\bash.exe"
+      ],
+      "icon": "terminal-bash",
+      "args": ["--login"]
+    },
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell"
+    },
+    "Command Prompt": {
+      "path": [
+        "${env:windir}\\Sysnative\\cmd.exe",
+        "${env:windir}\\System32\\cmd.exe"
+      ],
+      "args": [],
+      "icon": "terminal-cmd"
+    }
+  },
+  "cursor.chat.defaultLanguage": "es",
+  "cursor.general.language": "es",
+  "cursor.ai.commitMessageLanguage": "es",
+  "cursor.ai.defaultLanguage": "es"
+}

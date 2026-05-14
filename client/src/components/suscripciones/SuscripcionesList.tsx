@@ -1,0 +1,607 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import SearchButton from "../common/Input/SearchButton";
+import ActionButton from "../common/Button/ActionButton";
+import DataTable from "../common/Table/DataTable";
+import {
+  ArrowPathIcon,
+  ArrowUturnLeftIcon,
+  NoSymbolIcon,
+  PauseIcon,
+  PlusIcon,
+} from "@heroicons/react/24/outline";
+import ClienteModal from "../common/ClienteModal";
+import Swal from "sweetalert2";
+import { useAuth } from "../../contexts/useAuth";
+import {
+  addDaysLocal,
+  formatDateLocal,
+  todayLocalISO,
+} from "../../utils/utils";
+import {
+  useClientesPlanes,
+  type Plan,
+} from "../../hooks/useClientesPlanes";
+
+interface Suscripcion {
+  id: string | number;
+  SuscripcionId: string | number;
+  ClienteId: string | number;
+  PlanId: string | number;
+  SuscripcionFechaInicio: string;
+  SuscripcionFechaFin: string;
+  SuscripcionEstado?: string;
+  ClienteNombre?: string;
+  ClienteApellido?: string;
+  PlanNombre?: string;
+  EstadoPago?: string;
+  [key: string]: unknown;
+}
+
+const isPlanActivo = (plan: Plan) =>
+  plan.PlanActivo === 1 || plan.PlanActivo === true;
+
+interface Pagination {
+  totalItems: number;
+}
+
+interface SuscripcionesListProps {
+  suscripciones: Suscripcion[];
+  onDelete?: (item: Suscripcion) => void;
+  onEdit?: (item: Suscripcion) => void;
+  onCreate?: () => void;
+  onRenovar?: (item: Suscripcion) => void;
+  onCancelar?: (item: Suscripcion) => void;
+  onSuspender?: (item: Suscripcion) => void;
+  onReactivar?: (item: Suscripcion) => void;
+  pagination?: Pagination;
+  onSearch: (value: string) => void;
+  searchTerm: string;
+  onKeyPress?: React.KeyboardEventHandler<HTMLInputElement>;
+  onSearchSubmit: () => void;
+  isModalOpen: boolean;
+  onCloseModal: () => void;
+  currentSuscripcion?: Suscripcion | null;
+  onSubmit: (formData: Suscripcion) => void;
+  sortKey?: string;
+  sortOrder?: "asc" | "desc";
+  onSort?: (key: string, order: "asc" | "desc") => void;
+}
+
+export default function SuscripcionesList({
+  suscripciones,
+  onDelete,
+  onEdit,
+  onCreate,
+  onRenovar,
+  onCancelar,
+  onSuspender,
+  onReactivar,
+  pagination,
+  onSearch,
+  searchTerm,
+  onKeyPress,
+  onSearchSubmit,
+  isModalOpen,
+  onCloseModal,
+  currentSuscripcion,
+  onSubmit,
+  sortKey,
+  sortOrder,
+  onSort,
+}: SuscripcionesListProps) {
+  const [formData, setFormData] = useState({
+    id: "",
+    SuscripcionId: "",
+    ClienteId: "",
+    PlanId: "",
+    SuscripcionFechaInicio: "",
+    SuscripcionFechaFin: "",
+  });
+  const { user } = useAuth();
+  const {
+    clientes,
+    planes,
+    clienteSeleccionado,
+    setClienteSeleccionado,
+    clienteSeleccionadoRef,
+    showClienteModal,
+    setShowClienteModal,
+    selectCliente,
+    createAndSelectCliente,
+  } = useClientesPlanes({
+    currentUserId: user?.id,
+    onClienteSelected: (cliente) =>
+      setFormData((prev) => ({ ...prev, ClienteId: String(cliente.ClienteId) })),
+  });
+
+  useEffect(() => {
+    if (currentSuscripcion) {
+      const cliente = clientes.find(
+        (c) => Number(c.ClienteId) === Number(currentSuscripcion.ClienteId)
+      );
+      setClienteSeleccionado(cliente || null);
+
+      const fechaInicio = currentSuscripcion.SuscripcionFechaInicio
+        ? currentSuscripcion.SuscripcionFechaInicio.split("T")[0]
+        : "";
+      const fechaFin = currentSuscripcion.SuscripcionFechaFin
+        ? currentSuscripcion.SuscripcionFechaFin.split("T")[0]
+        : "";
+
+      setFormData({
+        id: String(currentSuscripcion.id ?? currentSuscripcion.SuscripcionId),
+        SuscripcionId: String(currentSuscripcion.SuscripcionId),
+        ClienteId: String(currentSuscripcion.ClienteId),
+        PlanId: String(currentSuscripcion.PlanId),
+        SuscripcionFechaInicio: fechaInicio,
+        SuscripcionFechaFin: fechaFin,
+      });
+    } else if (currentSuscripcion === null && !clienteSeleccionadoRef.current) {
+      // Solo resetear cuando currentSuscripcion cambia a null Y no hay cliente seleccionado.
+      // Evita reset cuando se crea un cliente desde el modal anidado.
+      const fechaHoy = todayLocalISO();
+      setClienteSeleccionado(null);
+      setFormData({
+        id: "",
+        SuscripcionId: "",
+        ClienteId: "",
+        PlanId: "",
+        SuscripcionFechaInicio: fechaHoy,
+        SuscripcionFechaFin: "",
+      });
+    }
+    // El hook ya re-sincroniza el cliente seleccionado cuando cambia la lista.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSuscripcion, clientes]);
+
+  const calculateFechaFin = (fechaInicio: string, planId: string | number) => {
+    if (!fechaInicio || !planId) return "";
+    const plan = planes.find((p) => Number(p.PlanId) === Number(planId));
+    if (!plan || !plan.PlanDuracion) return "";
+    return addDaysLocal(fechaInicio, plan.PlanDuracion);
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+
+    setFormData((prev) => {
+      const newData = {
+        ...prev,
+        [name]: value,
+      };
+
+      // Si cambió la fecha de inicio y hay un plan seleccionado, calcular fecha fin
+      if (name === "SuscripcionFechaInicio" && prev.PlanId) {
+        const fechaFin = calculateFechaFin(value, prev.PlanId);
+        if (fechaFin) {
+          newData.SuscripcionFechaFin = fechaFin;
+        }
+      }
+
+      // Si cambió el plan y hay una fecha de inicio, recalcular fecha fin
+      if (name === "PlanId" && prev.SuscripcionFechaInicio && value) {
+        const fechaFin = calculateFechaFin(prev.SuscripcionFechaInicio, value);
+        if (fechaFin) {
+          newData.SuscripcionFechaFin = fechaFin;
+        }
+      }
+
+      return newData;
+    });
+  };
+
+  // selectCliente y createAndSelectCliente vienen del hook; quedan disponibles
+  // como `selectCliente` / `createAndSelectCliente` y disparan onClienteSelected
+  // (que actualiza formData.ClienteId).
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!clienteSeleccionado || !formData.ClienteId) {
+      Swal.fire({
+        icon: "warning",
+        title: "Cliente requerido",
+        text: "Debe seleccionar un cliente",
+      });
+      return;
+    }
+    onSubmit(formData);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onCloseModal();
+    }
+  };
+
+  const formatDate = (dateString: string) => formatDateLocal(dateString);
+
+  // Función para calcular el estado basándose en las fechas (comparación textual YYYY-MM-DD en local)
+  const calcularEstadoPorFechas = (
+    fechaInicio: string,
+    fechaFin: string
+  ): string => {
+    if (!fechaInicio || !fechaFin) return "CANCELADA";
+    const hoy = todayLocalISO();
+    const inicio = fechaInicio.split("T")[0];
+    const fin = fechaFin.split("T")[0];
+    if (hoy < inicio) return "FUTURA";
+    if (hoy > fin) return "VENCIDA";
+    return "ACTIVA";
+  };
+
+  // Estado de display: si la suscripción está marcada manualmente como
+  // CANCELADA ('C') o SUSPENDIDA ('S'), ese estado prevalece sobre la vigencia
+  // por fechas. Para 'A'/'V'/'F'/'' se recalcula con las fechas (más confiable
+  // que el campo persistido si las fechas cambian sin re-grabar el estado).
+  const getEstadoDisplay = (s: Suscripcion): string => {
+    if (s.SuscripcionEstado === "C") return "CANCELADA";
+    if (s.SuscripcionEstado === "S") return "SUSPENDIDA";
+    return calcularEstadoPorFechas(
+      s.SuscripcionFechaInicio || "",
+      s.SuscripcionFechaFin || ""
+    );
+  };
+
+  const isEstadoManual = (s: Suscripcion): boolean =>
+    s.SuscripcionEstado === "C" || s.SuscripcionEstado === "S";
+
+  const columns = [
+    { key: "SuscripcionId", label: "ID" },
+    {
+      key: "ClienteNombre",
+      label: "Cliente",
+      render: (suscripcion: Suscripcion) => {
+        const nombre =
+          `${suscripcion.ClienteNombre || ""} ${
+            suscripcion.ClienteApellido || ""
+          }`.trim() || "N/A";
+        if (!suscripcion.ClienteId) return nombre;
+        return (
+          <Link
+            to={`/clientes/${suscripcion.ClienteId}/historial-gimnasio`}
+            className="text-blue-600 hover:underline"
+            title="Ver historial del cliente"
+          >
+            {nombre}
+          </Link>
+        );
+      },
+    },
+    {
+      key: "PlanNombre",
+      label: "Plan",
+      render: (suscripcion: Suscripcion) => suscripcion.PlanNombre || "N/A",
+    },
+    {
+      key: "SuscripcionFechaInicio",
+      label: "Fecha Inicio",
+      render: (suscripcion: Suscripcion) =>
+        formatDate(suscripcion.SuscripcionFechaInicio),
+    },
+    {
+      key: "SuscripcionFechaFin",
+      label: "Fecha Fin",
+      render: (suscripcion: Suscripcion) =>
+        formatDate(suscripcion.SuscripcionFechaFin),
+    },
+    {
+      key: "SuscripcionEstado",
+      label: "Estado",
+      render: (suscripcion: Suscripcion) => {
+        const estado = getEstadoDisplay(suscripcion);
+        const color: Record<string, string> = {
+          ACTIVA: "bg-green-100 text-green-800",
+          VENCIDA: "bg-red-100 text-red-800",
+          FUTURA: "bg-blue-100 text-blue-800",
+          CANCELADA: "bg-gray-200 text-gray-700",
+          SUSPENDIDA: "bg-amber-100 text-amber-800",
+        };
+        return (
+          <span
+            className={`px-2 py-1 rounded text-xs font-semibold ${color[estado] || ""}`}
+          >
+            {estado}
+          </span>
+        );
+      },
+    },
+    {
+      key: "EstadoPago",
+      label: "Estado Pago",
+      render: (suscripcion: Suscripcion) => {
+        const estadoPago = suscripcion.EstadoPago || "PENDIENTE";
+        return (
+          <span
+            className={`px-2 py-1 rounded text-xs font-semibold ${
+              estadoPago === "PAGADA"
+                ? "bg-green-100 text-green-800"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
+          >
+            {estadoPago}
+          </span>
+        );
+      },
+    },
+  ];
+
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="flex-1">
+          <SearchButton
+            searchTerm={searchTerm}
+            onSearch={onSearch}
+            onKeyPress={onKeyPress}
+            onSearchSubmit={onSearchSubmit}
+            placeholder="Buscar suscripciones"
+          />
+        </div>
+        <div className="py-4">
+          {onCreate && (
+            <ActionButton
+              label="Nueva Suscripción"
+              onClick={onCreate}
+              icon={PlusIcon}
+            />
+          )}
+        </div>
+      </div>
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-sm text-gray-600">
+          Mostrando {suscripciones.length} de {pagination?.totalItems}{" "}
+          suscripciones
+        </div>
+      </div>
+      <DataTable<Suscripcion>
+        columns={columns}
+        data={suscripciones}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        emptyMessage="No se encontraron suscripciones"
+        sortKey={sortKey}
+        sortOrder={sortOrder}
+        onSort={onSort}
+        customActions={(suscripcion) => {
+          const estado = getEstadoDisplay(suscripcion);
+          const manual = isEstadoManual(suscripcion);
+          return (
+            <>
+              {onRenovar &&
+                !manual &&
+                estado !== "FUTURA" &&
+                estado !== "CANCELADA" && (
+                  <button
+                    type="button"
+                    onClick={() => onRenovar(suscripcion)}
+                    title="Renovar suscripción"
+                    className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 mr-2"
+                  >
+                    <ArrowPathIcon className="h-5 w-5" />
+                  </button>
+                )}
+              {onSuspender && !manual && (
+                <button
+                  type="button"
+                  onClick={() => onSuspender(suscripcion)}
+                  title="Suspender suscripción"
+                  className="inline-flex items-center justify-center text-amber-600 hover:text-amber-800 mr-2"
+                >
+                  <PauseIcon className="h-5 w-5" />
+                </button>
+              )}
+              {onCancelar && !manual && (
+                <button
+                  type="button"
+                  onClick={() => onCancelar(suscripcion)}
+                  title="Cancelar suscripción"
+                  className="inline-flex items-center justify-center text-gray-600 hover:text-gray-800 mr-2"
+                >
+                  <NoSymbolIcon className="h-5 w-5" />
+                </button>
+              )}
+              {onReactivar && manual && (
+                <button
+                  type="button"
+                  onClick={() => onReactivar(suscripcion)}
+                  title="Reactivar suscripción"
+                  className="inline-flex items-center justify-center text-green-600 hover:text-green-800 mr-2"
+                >
+                  <ArrowUturnLeftIcon className="h-5 w-5" />
+                </button>
+              )}
+            </>
+          );
+        }}
+      />
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={handleBackdropClick}
+        >
+          <div className="absolute inset-0 bg-black opacity-50" />
+          <div className="relative w-full max-w-2xl max-h-full z-10">
+            <form
+              onSubmit={handleSubmit}
+              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between p-4 border-b rounded-t">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {currentSuscripcion
+                    ? `Editar suscripción: ${currentSuscripcion.SuscripcionId}`
+                    : "Crear nueva suscripción"}
+                </h3>
+                <button
+                  type="button"
+                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
+                  onClick={onCloseModal}
+                >
+                  <svg
+                    className="w-3 h-3"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 14 14"
+                  >
+                    <path
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-6 gap-6">
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="ClienteId"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Cliente
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowClienteModal(true)}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 text-left hover:bg-gray-100 transition"
+                    >
+                      {clienteSeleccionado
+                        ? `${clienteSeleccionado.ClienteNombre} ${
+                            clienteSeleccionado.ClienteApellido || ""
+                          }`
+                        : "Seleccionar cliente"}
+                    </button>
+                    {!clienteSeleccionado && (
+                      <p className="mt-1 text-xs text-red-600">
+                        * Debe seleccionar un cliente
+                      </p>
+                    )}
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanId"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Plan
+                    </label>
+                    <select
+                      name="PlanId"
+                      id="PlanId"
+                      value={formData.PlanId}
+                      onChange={handleInputChange}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    >
+                      <option value="">Seleccionar plan</option>
+                      {planes
+                        .filter(
+                          (plan) =>
+                            isPlanActivo(plan) ||
+                            String(plan.PlanId) === String(formData.PlanId)
+                        )
+                        .map((plan) => (
+                          <option key={plan.PlanId} value={plan.PlanId}>
+                            {plan.PlanNombre}
+                            {!isPlanActivo(plan) ? " (inactivo)" : ""}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="SuscripcionFechaInicio"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Fecha Inicio
+                    </label>
+                    <input
+                      type="date"
+                      name="SuscripcionFechaInicio"
+                      id="SuscripcionFechaInicio"
+                      value={formData.SuscripcionFechaInicio}
+                      onChange={handleInputChange}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="SuscripcionFechaFin"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Fecha Fin
+                    </label>
+                    <input
+                      type="date"
+                      name="SuscripcionFechaFin"
+                      id="SuscripcionFechaFin"
+                      value={formData.SuscripcionFechaFin}
+                      onChange={handleInputChange}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="SuscripcionEstado"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Estado
+                    </label>
+                    <input
+                      type="text"
+                      name="SuscripcionEstado"
+                      id="SuscripcionEstado"
+                      value={
+                        formData.SuscripcionFechaInicio &&
+                        formData.SuscripcionFechaFin
+                          ? calcularEstadoPorFechas(
+                              formData.SuscripcionFechaInicio,
+                              formData.SuscripcionFechaFin
+                            )
+                          : "ACTIVA"
+                      }
+                      readOnly
+                      disabled
+                      className="bg-gray-100 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5 cursor-not-allowed"
+                      title="El estado se calcula automáticamente según las fechas"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      * El estado se calcula automáticamente según las fechas
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
+                <ActionButton
+                  label={currentSuscripcion ? "Actualizar" : "Crear"}
+                  type="submit"
+                />
+                <ActionButton
+                  label="Cancelar"
+                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10"
+                  onClick={onCloseModal}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      <ClienteModal
+        show={showClienteModal}
+        onClose={() => setShowClienteModal(false)}
+        clientes={clientes}
+        onSelect={selectCliente}
+        onCreateCliente={createAndSelectCliente}
+        currentUserId={user?.id}
+        hideTipo={true}
+        showFechaNacimiento={true}
+      />
+    </>
+  );
+}
