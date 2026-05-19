@@ -24,7 +24,6 @@ import {
 } from "../../components/common/ui";
 import { formatCurrency } from "../../utils/utils";
 import Swal from "sweetalert2";
-import { callGenexusSoap } from "../../services/genexus-soap.service";
 
 interface Pagination {
   totalItems: number;
@@ -277,9 +276,12 @@ export default function ComprasPage() {
         html: `
           <div class="text-left" style="overflow-x: auto;">
             <p><strong>Proveedor:</strong> ${proveedorInfo}</p>
-            <p><strong>Fecha:</strong> ${new Date(
-              compra.CompraFecha
-            ).toLocaleString()}</p>
+            <p><strong>Fecha:</strong> ${(() => {
+              const raw = String(compra.CompraFecha ?? "");
+              const [y, m, d] = raw.slice(0, 10).split("-").map(Number);
+              if (!y || !m || !d) return raw;
+              return new Date(y, m - 1, d).toLocaleDateString("es-ES");
+            })()}</p>
             <p><strong>Tipo:</strong> ${getTipoCompraText(
               compra.CompraTipo
             )}</p>
@@ -326,29 +328,7 @@ export default function ComprasPage() {
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          // Preparar fecha para el webservice
-          const fechaDate = new Date();
-          const dia = fechaDate.getDate();
-          const mes = fechaDate.getMonth() + 1;
-          const año = fechaDate.getFullYear() % 100;
-          const diaStr = dia < 10 ? `0${dia}` : dia.toString();
-          const mesStr = mes < 10 ? `0${mes}` : mes.toString();
-          const añoStr = año < 10 ? `0${año}` : año.toString();
-          const fechaFormateada = `${diaStr}/${mesStr}/${añoStr}`;
-
-          // PRIMERO: Llamar al webservice GeneXus
-          await callGenexusSoap({
-            endpoint: "apborrarregistodiariows",
-            operation: "PBorrarRegistoDiarioWS.VENTACONFIRMAR",
-            namespace: "TechNow",
-            payload: {
-              Ventaid: compra.CompraId,
-              Fechastring: fechaFormateada,
-              Regla: 2,
-            },
-          });
-
-          // SEGUNDO: Solo si el webservice fue exitoso, eliminar la compra
+          // El endpoint Node DELETE revierte caja y stock atómicamente.
           await deleteCompra(compra.CompraId);
 
           let timerInterval: ReturnType<typeof setInterval>;

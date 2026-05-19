@@ -166,13 +166,27 @@ const ComprasList = ({
       key: "CompraFecha",
       label: "Fecha",
       render: (compra: CompraWithId) => {
-        const fecha = new Date(compra.CompraFecha);
-        return fecha.toLocaleDateString("es-ES", {
+        const raw = String(compra.CompraFecha ?? "");
+        if (!raw) return "";
+        // Si trae componente horario o sufijo Z, el backend ya lo ajustó a UTC
+        // sobre el local del servidor; dejo que JS lo interprete y lo
+        // muestre en local con hora.
+        if (/[TZ:]/.test(raw)) {
+          return new Date(raw).toLocaleString("es-ES", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+        // Fallback DATE puro "YYYY-MM-DD": construyo local sin hora.
+        const [y, mo, d] = raw.slice(0, 10).split("-").map(Number);
+        if (!y || !mo || !d) return raw;
+        return new Date(y, mo - 1, d).toLocaleDateString("es-ES", {
           day: "2-digit",
           month: "2-digit",
           year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
         });
       },
     },
@@ -202,7 +216,7 @@ const ComprasList = ({
     {
       key: "Total",
       label: "Total",
-      render: (compra: CompraWithId) => formatCurrency(compra.Total),
+      render: (compra: CompraWithId) => formatCurrency(Number(compra.Total)),
     },
     {
       key: "CompraEntrega",

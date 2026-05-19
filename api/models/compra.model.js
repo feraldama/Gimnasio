@@ -50,7 +50,7 @@ const Compra = {
          FROM compra c 
          LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId 
          LEFT JOIN compraproducto cp ON c.CompraId = cp.CompraId
-         GROUP BY c.CompraId
+         GROUP BY c.CompraId, p.ProveedorId, p.ProveedorId
          ORDER BY c.CompraFecha DESC`,
         (err, results) => {
           if (err) reject(err);
@@ -70,7 +70,7 @@ const Compra = {
          LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId 
          LEFT JOIN compraproducto cp ON c.CompraId = cp.CompraId
          WHERE c.CompraId = ?
-         GROUP BY c.CompraId`,
+         GROUP BY c.CompraId, p.ProveedorId, p.ProveedorId`,
         [id],
         (err, results) => {
           if (err) return reject(err);
@@ -122,7 +122,7 @@ const Compra = {
          LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId
          LEFT JOIN compraproducto cp ON c.CompraId = cp.CompraId
          ${whereSql}
-         GROUP BY c.CompraId
+         GROUP BY c.CompraId, p.ProveedorId, p.ProveedorId
          ORDER BY ${orderByField} ${order} LIMIT ? OFFSET ?`,
         [...filterParams, limit, offset],
         (err, results) => {
@@ -192,7 +192,7 @@ const Compra = {
         WHERE (c.CompraFactura LIKE ?
           OR c.CompraTipo LIKE ?
           OR p.ProveedorNombre LIKE ?)${filtersAndClause}
-        GROUP BY c.CompraId
+        GROUP BY c.CompraId, p.ProveedorId
         ORDER BY ${orderByField} ${order}
         LIMIT ? OFFSET ?
       `;

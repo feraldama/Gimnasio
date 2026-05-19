@@ -9,7 +9,7 @@ import ProductCard from "../../components/products/ProductCard";
 import { useAuth } from "../../contexts/useAuth";
 import PaymentModal from "../../components/common/PaymentModal";
 import Swal from "sweetalert2";
-import { callGenexusSoap } from "../../services/genexus-soap.service";
+import { confirmarVenta, devolverVenta } from "../../services/venta.service";
 import { resolveProductoImagen } from "../../utils/productImage";
 import {
   getAllClientesSinPaginacion,
@@ -477,22 +477,10 @@ export default function Sales() {
   }
 
   const sendRequest = async () => {
-    const fecha = new Date();
-    // Paraguay quedó fijo en UTC-4 tras abolir el horario de verano, pero el
-    // JVM/tzdata de Tomcat aún piensa Paraguay = UTC-3, por lo que suma 4h
-    // al guardar. Compensamos restando 4h desde el front. Ideal sería corregir
-    // el backend con `-Duser.timezone=Etc/GMT+4`; mientras tanto, este parche.
-    const fechaAjustada = new Date(fecha.getTime() - 4 * 60 * 60 * 1000);
-    const dia = fechaAjustada.getDate();
-    const mes = fechaAjustada.getMonth() + 1;
-    const año = fechaAjustada.getFullYear() % 100;
-    const diaStr = dia < 10 ? `0${dia}` : dia.toString();
-    const mesStr = mes < 10 ? `0${mes}` : mes.toString();
-    const añoStr = año < 10 ? `0${año}` : año.toString();
-    const horas = String(fechaAjustada.getHours()).padStart(2, "0");
-    const minutos = String(fechaAjustada.getMinutes()).padStart(2, "0");
-    const segundos = String(fechaAjustada.getSeconds()).padStart(2, "0");
-    const fechaFormateada = `${diaStr}/${mesStr}/${añoStr} ${horas}:${minutos}:${segundos}`;
+    // Hora local del navegador. El parche UTC-4 viejo era para compensar un
+    // bug del JVM/Tomcat de GeneXus que sumaba 1h al guardar; ahora vamos a
+    // Node/PG directo y no hace falta.
+    const fechaAjustada = new Date();
 
     const SDTProductoItem = carrito.map((p) => {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
@@ -521,62 +509,63 @@ export default function Sales() {
 
     // Determinar si es venta o devolución
     const isDevolucionMode = isDevolucion;
-    const endpoint = isDevolucionMode ? "apdevolucionws" : "apventaconfirmarws";
-    const operationName = isDevolucionMode
-      ? "PDevolucionWS.VENTACONFIRMAR"
-      : "PVentaConfirmarWS.VENTACONFIRMAR";
-    const namespace = isDevolucionMode ? "Tech" : "TechNow";
 
-    const payload: Record<string, unknown> = {
-      Sdtproducto: { SDTProductoItem: SDTProductoItem },
-      ...(isDevolucionMode
-        ? {
-            Ventafechastring: fechaFormateada,
-            Almacenorigenid: user?.LocalId,
-            Clientetipo: clienteSeleccionado?.ClienteTipo,
-            Cajaid: cajaAperturada?.CajaId,
-            Usuarioid: user?.id,
-            Efectivo: efectivo,
-            Total2: getSubtotal(cartItems),
-            Ventatipo: "CO",
-            Clienteid: clienteSeleccionado?.ClienteId,
-            Voucherreact: voucher,
-            Transferreact: Number(banco),
-            Ventanrofactura: 0,
-            Ventatimbrado: 0,
-          }
-        : {
-            Ventafechastring: fechaFormateada,
-            Almacenorigenid: user?.LocalId,
-            Clientetipo: clienteSeleccionado?.ClienteTipo,
-            Cajaid: cajaAperturada?.CajaId,
-            Usuarioid: user?.id,
-            Efectivo: efectivo,
-            Total2: getSubtotal(cartItems),
-            Ventatipo: "CO",
-            Pagotipo: "E",
-            Clienteid: clienteSeleccionado?.ClienteId,
-            Efectivoreact: Number(efectivo) + Number(totalRest),
-            Bancoreact: Number(bancoDebito) + Number(bancoCredito),
-            Clientecuentareact: cuentaCliente,
-            Voucherreact: voucher,
-            Transferreact: Number(banco),
-            Ventanrofactura: 0,
-            Ventatimbrado: 0,
-            Ventanropos:
-              bancoDebito > 0 || bancoCredito > 0
-                ? ventaNroPOS.trim() || "0"
-                : "0",
-          }),
-    };
+    // Timestamp ISO YYYY-MM-DDTHH:MM:SS para que registrodiariocaja y
+    // venta.VentaFecha guarden la hora real (el ajuste UTC-4 ya se aplicó
+    // sobre fechaAjustada arriba).
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const fechaIso =
+      `${fechaAjustada.getFullYear()}-${pad(fechaAjustada.getMonth() + 1)}-` +
+      `${pad(fechaAjustada.getDate())}T${pad(fechaAjustada.getHours())}:` +
+      `${pad(fechaAjustada.getMinutes())}:${pad(fechaAjustada.getSeconds())}`;
 
     try {
-      await callGenexusSoap({
-        endpoint,
-        operation: operationName,
-        namespace,
-        payload,
-      });
+      if (isDevolucionMode) {
+        await devolverVenta({
+          VentaFecha: fechaIso,
+          AlmacenOrigenId: Number(user?.LocalId),
+          CajaId: Number(cajaAperturada?.CajaId),
+          UsuarioId: String(user?.id ?? ""),
+          Total2: getSubtotal(cartItems),
+          Productos: SDTProductoItem.map((item) => ({
+            ProductoId: Number(item.Producto.ProductoId),
+            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
+            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
+          })),
+        });
+      } else {
+        await confirmarVenta({
+          VentaFecha: fechaIso,
+          AlmacenOrigenId: Number(user?.LocalId),
+          ClienteId: Number(clienteSeleccionado?.ClienteId),
+          CajaId: Number(cajaAperturada?.CajaId),
+          UsuarioId: String(user?.id ?? ""),
+          VentaPagoTipo: "E",
+          VentaNroFactura: 0,
+          VentaTimbrado: 0,
+          VentaNroPOS:
+            bancoDebito > 0 || bancoCredito > 0
+              ? ventaNroPOS.trim() || "0"
+              : "0",
+          Pagos: {
+            Efectivo: Number(efectivo) + Number(totalRest),
+            Banco: Number(bancoDebito) + Number(bancoCredito),
+            CuentaCliente: Number(cuentaCliente),
+            Voucher: Number(voucher),
+            Transferencia: Number(banco),
+          },
+          Productos: SDTProductoItem.map((item) => ({
+            ProductoId: Number(item.Producto.ProductoId),
+            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
+            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
+            VentaProductoPrecioTotal: Number(
+              item.Producto.VentaProductoPrecioTotal
+            ),
+            Combo: item.Producto.Combo === "S",
+            ComboPrecio: Number(item.Producto.ComboPrecio),
+          })),
+        });
+      }
       if (printTicket) {
         await generateTicketPDF();
       }

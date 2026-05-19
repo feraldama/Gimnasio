@@ -21,7 +21,6 @@ import {
 } from "../../components/common/ui";
 import { formatCurrency } from "../../utils/utils";
 import Swal from "sweetalert2";
-import { callGenexusSoap } from "../../services/genexus-soap.service";
 
 interface Pagination {
   totalItems: number;
@@ -304,29 +303,8 @@ export default function VentasPage() {
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          // Preparar fecha para el webservice
-          const fechaDate = new Date();
-          const dia = fechaDate.getDate();
-          const mes = fechaDate.getMonth() + 1;
-          const año = fechaDate.getFullYear() % 100;
-          const diaStr = dia < 10 ? `0${dia}` : dia.toString();
-          const mesStr = mes < 10 ? `0${mes}` : mes.toString();
-          const añoStr = año < 10 ? `0${año}` : año.toString();
-          const fechaFormateada = `${diaStr}/${mesStr}/${añoStr}`;
-
-          // PRIMERO: Llamar al webservice GeneXus
-          await callGenexusSoap({
-            endpoint: "apborrarregistodiariows",
-            operation: "PBorrarRegistoDiarioWS.VENTACONFIRMAR",
-            namespace: "TechNow",
-            payload: {
-              Ventaid: venta.VentaId,
-              Fechastring: fechaFormateada,
-              Regla: 1,
-            },
-          });
-
-          // SEGUNDO: Solo si el webservice fue exitoso, eliminar la venta
+          // El endpoint Node DELETE ya revierte caja y restituye stock
+          // atómicamente (reemplaza el viejo apborrarregistodiariows + delete).
           await deleteVenta(venta.VentaId);
 
           let timerInterval: ReturnType<typeof setInterval>;

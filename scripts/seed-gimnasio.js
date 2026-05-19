@@ -18,7 +18,11 @@ const apiNodeModules = path.join(__dirname, "..", "api", "node_modules");
 require(path.join(apiNodeModules, "dotenv")).config({
   path: path.join(__dirname, "..", "api", ".env"),
 });
-const mysql = require(path.join(apiNodeModules, "mysql2", "promise"));
+// Use the API's db adapter (PostgreSQL under the hood, mysql2-compatible
+// surface). The adapter exposes `promise().getConnection()` with
+// query/beginTransaction/commit/rollback/release so the original mysql2
+// transactional flow keeps working.
+const db = require(path.join(__dirname, "..", "api", "config", "db"));
 
 // -------- Config -----------
 const CLIENTES_COUNT = 30;
@@ -102,14 +106,7 @@ function setTime(d, h, m, s = 0) {
 
 // -------- Main -----------
 async function main() {
-  const conn = await mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    multipleStatements: true,
-    dateStrings: true,
-  });
+  const conn = await db.promise().getConnection();
   console.log(`Conectado a ${process.env.DB_NAME}`);
 
   await conn.beginTransaction();
@@ -122,10 +119,12 @@ async function main() {
     await conn.query("DELETE FROM suscripcion");
     await conn.query("DELETE FROM clientes WHERE ClienteId > 2");
     await conn.query("DELETE FROM plan");
-    await conn.query("ALTER TABLE pago AUTO_INCREMENT = 1");
-    await conn.query("ALTER TABLE asistencia AUTO_INCREMENT = 1");
-    await conn.query("ALTER TABLE suscripcion AUTO_INCREMENT = 1");
-    await conn.query("ALTER TABLE plan AUTO_INCREMENT = 1");
+    // Postgres uses sequences for SERIAL columns. ALTER SEQUENCE ... RESTART
+    // replaces MySQL's `ALTER TABLE foo AUTO_INCREMENT = 1`.
+    await conn.query("ALTER SEQUENCE pago_pagoid_seq RESTART WITH 1");
+    await conn.query("ALTER SEQUENCE asistencia_asistenciaid_seq RESTART WITH 1");
+    await conn.query("ALTER SEQUENCE suscripcion_suscripcionid_seq RESTART WITH 1");
+    await conn.query("ALTER SEQUENCE plan_planid_seq RESTART WITH 1");
     // Reset caja demo a 0
     await conn.query("UPDATE caja SET CajaMonto = 0 WHERE CajaId = ?", [CAJA_ID]);
 
@@ -329,7 +328,8 @@ async function main() {
     console.error("Rollback. Error:", e);
     process.exitCode = 1;
   } finally {
-    await conn.end();
+    conn.release();
+    process.exit(process.exitCode || 0);
   }
 }
 

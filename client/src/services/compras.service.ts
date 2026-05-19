@@ -1,6 +1,39 @@
 import api from "./api";
 import type { AxiosError } from "axios";
 
+export interface ConfirmarCompraProducto {
+  ProveedorId: number;
+  ProductoId: number;
+  CompraProductoCantidad: number;
+  CompraProductoPrecio: number;
+  AlmacenId: number;
+  Bonificacion: number;
+  CompraProductoCantidadUnidad: "C" | "U";
+}
+
+export interface ConfirmarCompraPayload {
+  CompraFecha: string; // ISO YYYY-MM-DD[THH:MM:SS]
+  CompraFactura: number;
+  CompraTipo: "CO" | "CR";
+  Entregado: number;
+  Total: number;
+  UsuarioId: string;
+  CajaId: number;
+  Productos: ConfirmarCompraProducto[];
+}
+
+export const confirmarCompra = async (payload: ConfirmarCompraPayload) => {
+  try {
+    const response = await api.post("/compras/confirmar", payload);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || { message: "Error al confirmar la compra" }
+    );
+  }
+};
+
 export interface Compra {
   CompraId: number;
   CompraFecha: string;

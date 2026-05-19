@@ -9,7 +9,7 @@ import Pagination from "../../components/common/Pagination";
 import ProductCard from "../../components/products/ProductCard";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
-import { callGenexusSoap } from "../../services/genexus-soap.service";
+import { confirmarCompra } from "../../services/compras.service";
 import { resolveProductoImagen } from "../../utils/productImage";
 import {
   getAllProveedoresSinPaginacion,
@@ -350,49 +350,42 @@ export default function Compras() {
       return;
     }
 
-    // Formatear la fecha seleccionada al formato DD/MM/YY
-    // Parsear directamente del string para evitar problemas de zona horaria
-    const [añoCompleto, mesCompleto, diaCompleto] = compraFecha.split("-");
-    const diaFormato = parseInt(diaCompleto, 10);
-    const mesFormato = parseInt(mesCompleto, 10);
-    const añoFormato = parseInt(añoCompleto, 10) % 100;
-    const diaStr = diaFormato < 10 ? `0${diaFormato}` : diaFormato.toString();
-    const mesStr = mesFormato < 10 ? `0${mesFormato}` : mesFormato.toString();
-    const añoStr = añoFormato < 10 ? `0${añoFormato}` : añoFormato.toString();
-    const fechaFormateada = `${diaStr}/${mesStr}/${añoStr}`;
+    // Combino la fecha del input (YYYY-MM-DD) con la hora local actual para
+    // que CompraFecha (TIMESTAMP) registre el momento de confirmación.
+    const ahora = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const compraFechaConHora =
+      `${compraFecha}T${pad(ahora.getHours())}:${pad(ahora.getMinutes())}:` +
+      `${pad(ahora.getSeconds())}`;
 
-    // Mapear el carrito (CompraProductoId se asignará en GeneXus usando el contador &i)
-    const SDTCompraItem = carrito.map((p) => ({
-      ProveedorId: proveedorSeleccionado.ProveedorId,
-      Producto: {
-        ProductoId: p.id,
-        // CompraProductoId NO se envía aquí porque el SDT no lo tiene definido
-        // Se asignará automáticamente en GeneXus usando el contador &i
-        CompraProductoCantidad: p.cantidad,
-        CompraProductoPrecio: p.precioUnitario,
-        AlmacenId: user.LocalId || 1,
-        Bonificacion: 0,
-        CompraProductoCantidadUnidad: p.caja ? "C" : "U",
-      },
-    }));
+    if (!cajaAperturada) {
+      Swal.fire({
+        icon: "error",
+        title: "Caja no abierta",
+        text: "Tenés que abrir tu caja antes de confirmar la compra.",
+      });
+      return;
+    }
 
     try {
-      await callGenexusSoap({
-        endpoint: "apcompraconfirmarws",
-        operation: "PCompraConfirmarWS.VENTACONFIRMAR",
-        namespace: "Tech",
-        payload: {
-          Sdtcompra: { SDTCompraItem: SDTCompraItem },
-          Comprafechastring: fechaFormateada,
-          Comprafactura: parseInt(compraFactura),
-          Compratipo: compraTipo,
-          Entregado: compraEntrega,
-          Total: total,
-          Usuarioid: user.id,
-        },
+      await confirmarCompra({
+        CompraFecha: compraFechaConHora,
+        CompraFactura: parseInt(compraFactura),
+        CompraTipo: compraTipo as "CO" | "CR",
+        Entregado: compraEntrega,
+        Total: total,
+        UsuarioId: String(user.id),
+        CajaId: Number(cajaAperturada.CajaId),
+        Productos: carrito.map((p) => ({
+          ProveedorId: Number(proveedorSeleccionado.ProveedorId),
+          ProductoId: Number(p.id),
+          CompraProductoCantidad: Number(p.cantidad),
+          CompraProductoPrecio: Number(p.precioUnitario),
+          AlmacenId: Number(user.LocalId || 1),
+          Bonificacion: 0,
+          CompraProductoCantidadUnidad: p.caja ? "C" : "U",
+        })),
       });
-
-      // El webservice SOAP se encarga de crear la compra en la base de datos
 
       Swal.fire({
         title: "Compra realizada con éxito!",

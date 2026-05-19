@@ -367,16 +367,14 @@ const Producto = {
         "LocalId",
       ];
       camposActualizables.forEach((campo) => {
-        if (campo === "ProductoImagen_GXI") {
-          updateFields.push(`${campo} = ?`);
-          values.push(productoData.ProductoImagen_GXI || null);
-        } else if (campo === "ProductoImagen") {
+        if (productoData[campo] === undefined) return;
+        if (campo === "ProductoImagen") {
           const imagenBuffer = productoData.ProductoImagen
             ? Buffer.from(productoData.ProductoImagen, "base64")
             : null;
           updateFields.push(`${campo} = ?`);
           values.push(imagenBuffer);
-        } else if (productoData[campo] !== undefined) {
+        } else {
           updateFields.push(`${campo} = ?`);
           values.push(productoData[campo]);
         }
@@ -413,9 +411,9 @@ const Producto = {
             ProductoAlmacenStock,
             ProductoAlmacenStockUnitario
           ) VALUES ${placeholders}
-          ON DUPLICATE KEY UPDATE
-            ProductoAlmacenStock = VALUES(ProductoAlmacenStock),
-            ProductoAlmacenStockUnitario = VALUES(ProductoAlmacenStockUnitario)
+          ON CONFLICT (ProductoId, AlmacenId) DO UPDATE SET
+            ProductoAlmacenStock = EXCLUDED.ProductoAlmacenStock,
+            ProductoAlmacenStockUnitario = EXCLUDED.ProductoAlmacenStockUnitario
         `;
 
         db.query(upsertQuery, insertValues, (errPa) => {

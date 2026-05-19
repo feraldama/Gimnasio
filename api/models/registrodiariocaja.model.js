@@ -209,7 +209,7 @@ const RegistroDiarioCaja = {
           OR CAST(r.TipoGastoId AS CHAR) LIKE ?
           OR CAST(r.TipoGastoGrupoId AS CHAR) LIKE ?
           OR CAST(r.RegistroDiarioCajaMonto AS CHAR) LIKE ?
-          OR DATE_FORMAT(r.RegistroDiarioCajaFecha, '%d/%m/%Y %H:%i:%s') LIKE ?)${filtersAndClause}
+          OR TO_CHAR(r.RegistroDiarioCajaFecha, 'DD/MM/YYYY HH24:MI:SS') LIKE ?)${filtersAndClause}
         ORDER BY r.${sortField} ${order}
         LIMIT ? OFFSET ?
       `;
@@ -241,7 +241,7 @@ const RegistroDiarioCaja = {
               OR CAST(r.TipoGastoId AS CHAR) LIKE ?
               OR CAST(r.TipoGastoGrupoId AS CHAR) LIKE ?
               OR CAST(r.RegistroDiarioCajaMonto AS CHAR) LIKE ?
-              OR DATE_FORMAT(r.RegistroDiarioCajaFecha, '%d/%m/%Y %H:%i:%s') LIKE ?)${filtersAndClause}
+              OR TO_CHAR(r.RegistroDiarioCajaFecha, 'DD/MM/YYYY HH24:MI:SS') LIKE ?)${filtersAndClause}
           `;
 
           db.query(

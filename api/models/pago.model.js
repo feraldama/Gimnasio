@@ -242,9 +242,9 @@ Pago.getByClienteId = (clienteId) => {
 Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia") => {
   return new Promise((resolve, reject) => {
     const agrupaciones = {
-      dia: "DATE(p.PagoFecha)",
-      semana: "DATE_FORMAT(p.PagoFecha, '%x-W%v')",
-      mes: "DATE_FORMAT(p.PagoFecha, '%Y-%m')",
+      dia: "TO_CHAR(p.PagoFecha, 'YYYY-MM-DD')",
+      semana: "TO_CHAR(p.PagoFecha, 'IYYY-\"W\"IW')",
+      mes: "TO_CHAR(p.PagoFecha, 'YYYY-MM')",
     };
     const groupExpr = agrupaciones[agruparPor] || agrupaciones.dia;
 

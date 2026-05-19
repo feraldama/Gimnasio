@@ -243,6 +243,92 @@ export const getProductosByVentaId = async (ventaId: string | number) => {
   }
 };
 
+export interface ConfirmarVentaProducto {
+  ProductoId: number;
+  VentaProductoCantidad: number;
+  ProductoUnidad: "U" | "C";
+  VentaProductoPrecioTotal: number;
+  Combo: boolean;
+  ComboPrecio: number;
+}
+
+export interface ConfirmarVentaPayload {
+  VentaFecha: string; // ISO YYYY-MM-DD
+  AlmacenOrigenId: number;
+  ClienteId: number;
+  CajaId: number;
+  UsuarioId: string;
+  VentaPagoTipo: string;
+  VentaNroFactura?: number;
+  VentaTimbrado?: number;
+  VentaNroPOS?: string;
+  Pagos: {
+    Efectivo?: number;
+    Banco?: number;
+    CuentaCliente?: number;
+    Voucher?: number;
+    Transferencia?: number;
+  };
+  Productos: ConfirmarVentaProducto[];
+}
+
+export const confirmarVenta = async (payload: ConfirmarVentaPayload) => {
+  try {
+    const response = await api.post("/venta/confirmar", payload);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || { message: "Error al confirmar la venta" }
+    );
+  }
+};
+
+export interface RecibirPagoCreditoPayload {
+  Tipo: "V" | "C";
+  ClienteId: number;
+  MontoRecibido: number;
+  CajaId: number;
+  UsuarioId: string;
+  Fecha: string; // ISO YYYY-MM-DD
+  VentaPagoTipo?: "CO" | "PO" | "TR";
+}
+
+export const recibirPagoCredito = async (payload: RecibirPagoCreditoPayload) => {
+  try {
+    const response = await api.post("/ventacreditopago/recibir", payload);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw axiosError.response?.data || { message: "Error al recibir el pago" };
+  }
+};
+
+export interface DevolucionVentaPayload {
+  VentaFecha: string; // ISO YYYY-MM-DD
+  AlmacenOrigenId: number;
+  CajaId: number;
+  UsuarioId: string;
+  Total2: number;
+  Productos: Array<{
+    ProductoId: number;
+    VentaProductoCantidad: number;
+    ProductoUnidad: "U" | "C";
+  }>;
+}
+
+export const devolverVenta = async (payload: DevolucionVentaPayload) => {
+  try {
+    const response = await api.post("/venta/devolucion", payload);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || { message: "Error al realizar la devolución" }
+    );
+  }
+};
+
 export const getVentasPendientesPorCliente = async (
   clienteId: number,
   localId?: number
