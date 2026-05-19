@@ -212,6 +212,7 @@ export default function CombosPage() {
         searchTerm={searchTerm}
         onKeyPress={handleKeyPress}
         onSearchSubmit={applySearch}
+        pagination={combosData.pagination}
       />
       <Pagination
         currentPage={currentPage}

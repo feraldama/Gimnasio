@@ -193,6 +193,7 @@ export default function MenusPage() {
         onSearch={handleSearch}
         onKeyPress={handleKeyPress}
         onSearchSubmit={handleSearchSubmit}
+        pagination={menusData.pagination}
       />
       <Pagination
         currentPage={currentPage}

@@ -210,6 +210,7 @@ export default function PerfilesPage() {
         onSearch={handleSearch}
         onKeyPress={handleKeyPress}
         onSearchSubmit={handleSearchSubmit}
+        pagination={perfilesData.pagination}
       />
       <Pagination
         currentPage={currentPage}

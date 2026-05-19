@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { getCajas } from "../../services/cajas.service";
 import ActionButton from "../../components/common/Button/ActionButton";
-import { LoadingState } from "../../components/common/ui";
+import { LoadingState, PermissionDenied } from "../../components/common/ui";
+import { usePermiso } from "../../hooks/usePermiso";
 import {
   aperturaCierreCaja,
   getEstadoAperturaPorUsuario,
@@ -374,6 +375,8 @@ export default function AperturaCierreCajaPage() {
     }
   };
 
+  const puedeLeer = usePermiso("APERTURACAJA", "leer");
+  if (!puedeLeer) return <PermissionDenied resource="la apertura/cierre de caja" />;
   if (loading) return <LoadingState message="Cargando cajas..." />;
 
   return (

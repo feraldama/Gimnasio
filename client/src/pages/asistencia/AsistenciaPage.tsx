@@ -10,6 +10,7 @@ import {
 import ClienteModal from "../../components/common/ClienteModal";
 import { useAuth } from "../../contexts/useAuth";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import {
   useClientesPlanes,
   type Cliente,
@@ -42,7 +43,7 @@ const formatHora = (dt: string): string => {
 
 export default function AsistenciaPage() {
   const { user } = useAuth();
-  const puedeLeer = usePermiso("SUSCRIPCIONES", "leer");
+  const puedeLeer = usePermiso("ASISTENCIA", "leer");
 
   // Reutilizamos el hook para tener la lista completa de clientes en el modal
   const { clientes, selectCliente, showClienteModal, setShowClienteModal } =
@@ -124,8 +125,7 @@ export default function AsistenciaPage() {
     }
   };
 
-  if (!puedeLeer)
-    return <div className="p-4">No tienes permiso para ver esta sección</div>;
+  if (!puedeLeer) return <PermissionDenied resource="la asistencia" />;
 
   return (
     <div className="container mx-auto px-4">

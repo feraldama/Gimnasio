@@ -10,6 +10,7 @@ import PlanesList from "../../components/planes/PlanesList";
 import Pagination from "../../components/common/Pagination";
 import Swal from "sweetalert2";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 
 interface Plan {
   id: string | number;
@@ -180,7 +181,7 @@ export default function PlanesPage() {
     setCurrentPage(1);
   };
 
-  if (!puedeLeer) return <div>No tienes permiso para ver los planes</div>;
+  if (!puedeLeer) return <PermissionDenied resource="los planes" />;
 
   if (loading) return <div>Cargando planes...</div>;
   if (error) return <div>Error: {error}</div>;

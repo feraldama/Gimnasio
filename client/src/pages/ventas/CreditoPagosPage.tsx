@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { recibirPagoCredito } from "../../services/venta.service";
+import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import Swal from "sweetalert2";
 import { getAllClientesSinPaginacion } from "../../services/clientes.service";
 import { formatCurrency, formatMiles } from "../../utils/utils";
@@ -33,6 +35,7 @@ const TIPOS_PAGO = [
 ];
 
 const CreditoPagosPage = () => {
+  const puedeLeerPagos = usePermiso("COBROCREDITO", "leer");
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [selectedCliente, setSelectedCliente] = useState<string>("");
   const [ventasPendientes, setVentasPendientes] = useState<VentaPendiente[]>(
@@ -208,6 +211,9 @@ const CreditoPagosPage = () => {
       Swal.fire("Error", "Hubo un problema al procesar el pago.", "error");
     }
   };
+
+  if (!puedeLeerPagos)
+    return <PermissionDenied resource="el cobro de créditos" />;
 
   return (
     <div className="container mx-auto px-4">

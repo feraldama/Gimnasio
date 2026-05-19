@@ -10,6 +10,8 @@ import ProductCard from "../../components/products/ProductCard";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
 import { confirmarCompra } from "../../services/compras.service";
+import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import { resolveProductoImagen } from "../../utils/productImage";
 import {
   getAllProveedoresSinPaginacion,
@@ -35,6 +37,7 @@ interface CreateProveedorData {
 import type { Caja } from "../../types";
 
 export default function Compras() {
+  const puedeLeerCompras = usePermiso("NUEVACOMPRA", "leer");
   const [carrito, setCarrito] = useState<
     {
       id: number;
@@ -532,6 +535,9 @@ export default function Compras() {
     addFirstOnNextResultsRef.current = true;
     setBusquedaDebounced(busqueda);
   };
+
+  if (!puedeLeerCompras)
+    return <PermissionDenied resource="la pantalla de compras" />;
 
   return (
     <div className="flex h-screen bg-[#f5f8ff]">

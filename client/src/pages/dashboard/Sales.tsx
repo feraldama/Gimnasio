@@ -10,6 +10,8 @@ import { useAuth } from "../../contexts/useAuth";
 import PaymentModal from "../../components/common/PaymentModal";
 import Swal from "sweetalert2";
 import { confirmarVenta, devolverVenta } from "../../services/venta.service";
+import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import { resolveProductoImagen } from "../../utils/productImage";
 import {
   getAllClientesSinPaginacion,
@@ -45,6 +47,7 @@ interface Combo {
 }
 
 export default function Sales() {
+  const puedeLeerVentas = usePermiso("NUEVAVENTA", "leer");
   const [carrito, setCarrito] = useState<
     {
       id: number;
@@ -893,6 +896,9 @@ export default function Sales() {
       precioUnitario: p.ProductoPrecioUnitario,
     });
   };
+
+  if (!puedeLeerVentas)
+    return <PermissionDenied resource="la pantalla de ventas" />;
 
   return (
     <div className="flex h-screen bg-[#f5f8ff]">

@@ -17,6 +17,7 @@ import CrearPagoModal, {
 import Pagination from "../../components/common/Pagination";
 import Swal from "sweetalert2";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import { addDaysLocal, todayLocalISO } from "../../utils/utils";
 
 interface Suscripcion {
@@ -345,8 +346,7 @@ export default function SuscripcionesPage() {
     setCurrentPage(1);
   };
 
-  if (!puedeLeer)
-    return <div>No tienes permiso para ver las suscripciones</div>;
+  if (!puedeLeer) return <PermissionDenied resource="las suscripciones" />;
 
   if (loading) return <div>Cargando suscripciones...</div>;
   if (error) return <div>Error: {error}</div>;

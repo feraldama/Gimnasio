@@ -8,6 +8,7 @@ import {
   todayLocalISO,
 } from "../../utils/utils";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 
 type AgruparPor = "dia" | "semana" | "mes";
 
@@ -61,7 +62,7 @@ const formatPeriodo = (periodo: string, agruparPor: AgruparPor): string => {
 };
 
 export default function ReporteCobranzaPage() {
-  const puedeLeer = usePermiso("PAGOS", "leer");
+  const puedeLeer = usePermiso("REPORTECOBRANZA", "leer");
 
   const hoy = todayLocalISO();
   const haceUnMes = addDaysLocal(hoy, -30);
@@ -106,8 +107,7 @@ export default function ReporteCobranzaPage() {
     if (puedeLeer) fetchReporte();
   }, [puedeLeer, fetchReporte]);
 
-  if (!puedeLeer)
-    return <div className="p-4">No tienes permiso para ver este reporte</div>;
+  if (!puedeLeer) return <PermissionDenied resource="el reporte de cobranza" />;
 
   const filas = data?.data.filas || [];
   const totales = data?.data.totales;

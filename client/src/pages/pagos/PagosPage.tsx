@@ -12,6 +12,7 @@ import PagosList from "../../components/pagos/PagosList";
 import Pagination from "../../components/common/Pagination";
 import Swal from "sweetalert2";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 import { useAuth } from "../../contexts/useAuth";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 
@@ -244,7 +245,7 @@ export default function PagosPage() {
 
   if (cajaVerificada === false) return null;
 
-  if (!puedeLeer) return <div>No tienes permiso para ver los pagos</div>;
+  if (!puedeLeer) return <PermissionDenied resource="los pagos" />;
 
   if (cajaVerificada !== true)
     return <div>Cargando...</div>;

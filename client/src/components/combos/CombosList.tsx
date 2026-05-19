@@ -34,6 +34,7 @@ interface CombosListProps {
   searchTerm: string;
   onKeyPress?: React.KeyboardEventHandler<HTMLInputElement>;
   onSearchSubmit: () => void;
+  pagination?: { totalItems?: number };
 }
 
 export default function CombosList({
@@ -50,6 +51,7 @@ export default function CombosList({
   searchTerm,
   onKeyPress,
   onSearchSubmit,
+  pagination,
 }: CombosListProps) {
   const [formData, setFormData] = useState<Combo>({
     id: "",
@@ -188,6 +190,12 @@ export default function CombosList({
               icon={PlusIcon}
             />
           )}
+        </div>
+      </div>
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-sm text-gray-600">
+          Mostrando {formatMiles(combos.length)} de{" "}
+          {formatMiles(pagination?.totalItems ?? combos.length)} combos
         </div>
       </div>
       <DataTable<Combo>

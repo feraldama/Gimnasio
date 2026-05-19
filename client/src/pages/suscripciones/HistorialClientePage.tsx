@@ -7,6 +7,7 @@ import { getPagosByCliente } from "../../services/pagos.service";
 import { formatDateLocal, formatMiles, todayLocalISO } from "../../utils/utils";
 import { getPagoTipoLabel } from "../../constants/pagoTipos";
 import { usePermiso } from "../../hooks/usePermiso";
+import { PermissionDenied } from "../../components/common/ui";
 
 interface Cliente {
   ClienteId: number;
@@ -99,8 +100,7 @@ export default function HistorialClientePage() {
     if (puedeLeer) fetchData();
   }, [puedeLeer, fetchData]);
 
-  if (!puedeLeer)
-    return <div className="p-4">No tienes permiso para ver este historial</div>;
+  if (!puedeLeer) return <PermissionDenied resource="el historial del cliente" />;
   if (loading) return <div className="p-4">Cargando historial...</div>;
   if (!cliente)
     return <div className="p-4">Cliente no encontrado</div>;
