@@ -13,8 +13,16 @@ interface Plan {
   PlanPrecio: number;
   PlanPermiteClases: boolean | number;
   PlanActivo: boolean | number;
+  PlanModalidad?: string;
+  PlanCantidadClases?: number;
   [key: string]: unknown;
 }
+
+const MODALIDAD_LABELS: Record<string, string> = {
+  MENSUAL: "Mensual",
+  CLASES: "Por clases (cupo)",
+  OPEN: "Pase libre",
+};
 
 interface Pagination {
   totalItems: number;
@@ -65,6 +73,8 @@ export default function PlanesList({
     PlanPrecio: 0,
     PlanPermiteClases: false,
     PlanActivo: true,
+    PlanModalidad: "MENSUAL",
+    PlanCantidadClases: 0,
   });
 
   useEffect(() => {
@@ -80,6 +90,8 @@ export default function PlanesList({
           currentPlan.PlanPermiteClases === true,
         PlanActivo:
           currentPlan.PlanActivo === 1 || currentPlan.PlanActivo === true,
+        PlanModalidad: currentPlan.PlanModalidad || "MENSUAL",
+        PlanCantidadClases: currentPlan.PlanCantidadClases ?? 0,
       });
     } else {
       setFormData({
@@ -90,6 +102,8 @@ export default function PlanesList({
         PlanPrecio: 0,
         PlanPermiteClases: false,
         PlanActivo: true,
+        PlanModalidad: "MENSUAL",
+        PlanCantidadClases: 0,
       });
     }
   }, [currentPlan]);
@@ -140,6 +154,20 @@ export default function PlanesList({
         plan.PlanPermiteClases === 1 || plan.PlanPermiteClases === true
           ? "Sí"
           : "No",
+    },
+    {
+      key: "PlanModalidad",
+      label: "Modalidad",
+      render: (plan: Plan) =>
+        MODALIDAD_LABELS[plan.PlanModalidad || "MENSUAL"] ||
+        plan.PlanModalidad ||
+        "Mensual",
+    },
+    {
+      key: "PlanCantidadClases",
+      label: "Cupo (clases)",
+      render: (plan: Plan) =>
+        plan.PlanModalidad === "CLASES" ? String(plan.PlanCantidadClases ?? 0) : "—",
     },
     {
       key: "PlanActivo",
@@ -263,12 +291,15 @@ export default function PlanesList({
                       type="number"
                       name="PlanDuracion"
                       id="PlanDuracion"
-                      value={formData.PlanDuracion || ""}
+                      value={
+                        formData.PlanDuracion ||
+                        (formData.PlanModalidad === "OPEN" ? 0 : "")
+                      }
                       placeholder="30"
                       onChange={handleInputChange}
                       className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      min="1"
-                      required
+                      min={formData.PlanModalidad === "OPEN" ? "0" : "1"}
+                      required={formData.PlanModalidad !== "OPEN"}
                     />
                   </div>
                   <div className="col-span-6 sm:col-span-3">
@@ -285,6 +316,8 @@ export default function PlanesList({
                       value={
                         formData.PlanPrecio
                           ? formatMiles(formData.PlanPrecio)
+                          : formData.PlanModalidad === "OPEN"
+                          ? "0"
                           : ""
                       }
                       placeholder="0"
@@ -303,7 +336,7 @@ export default function PlanesList({
                         }
                       }}
                       className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required
+                      required={formData.PlanModalidad !== "OPEN"}
                     />
                   </div>
                   <div className="col-span-6 sm:col-span-3">
@@ -354,6 +387,72 @@ export default function PlanesList({
                       <option value="1">Sí</option>
                     </select>
                   </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="PlanModalidad"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Modalidad de inscripción
+                    </label>
+                    <select
+                      name="PlanModalidad"
+                      id="PlanModalidad"
+                      value={formData.PlanModalidad}
+                      onChange={(e) => {
+                        const nueva = e.target.value;
+                        setFormData((prev) => {
+                          // Cruzar la "frontera" OPEN <-> no-OPEN limpia Precio
+                          // y Duración para que el form refleje los defaults
+                          // sensatos de cada modalidad (0/0 en OPEN, vacío en
+                          // los pagos). Cambiar entre MENSUAL <-> CLASES no
+                          // toca esos campos: los valores ya tipeados se reusan.
+                          const cruzaOpen =
+                            (prev.PlanModalidad === "OPEN") !==
+                            (nueva === "OPEN");
+                          return {
+                            ...prev,
+                            PlanModalidad: nueva,
+                            PlanCantidadClases:
+                              nueva === "CLASES" ? prev.PlanCantidadClases : 0,
+                            PlanPrecio: cruzaOpen ? 0 : prev.PlanPrecio,
+                            PlanDuracion: cruzaOpen ? 0 : prev.PlanDuracion,
+                          };
+                        });
+                      }}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                      required
+                    >
+                      <option value="MENSUAL">Mensual (por días)</option>
+                      <option value="CLASES">Por clases (cupo)</option>
+                      <option value="OPEN">Pase libre / Open</option>
+                    </select>
+                  </div>
+                  {formData.PlanModalidad === "CLASES" && (
+                    <div className="col-span-6 sm:col-span-3">
+                      <label
+                        htmlFor="PlanCantidadClases"
+                        className="block mb-2 text-sm font-medium text-gray-900"
+                      >
+                        Cantidad de clases (cupo)
+                      </label>
+                      <input
+                        type="number"
+                        name="PlanCantidadClases"
+                        id="PlanCantidadClases"
+                        value={formData.PlanCantidadClases || ""}
+                        placeholder="12"
+                        min={1}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            PlanCantidadClases: Number(e.target.value) || 0,
+                          }))
+                        }
+                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">

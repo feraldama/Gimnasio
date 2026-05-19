@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import ActionButton from "./Button/ActionButton";
 import { useAuth } from "../../contexts/useAuth";
+import { calcularDV } from "../../utils/rucDv";
 
 export interface Cliente {
   id?: string | number;
   ClienteId?: string | number;
   ClienteRUC: string;
+  ClienteDV?: string;
   ClienteNombre: string;
   ClienteApellido: string;
   ClienteDireccion: string;
@@ -136,16 +138,45 @@ export default function ClienteFormModal({
                   htmlFor="ClienteRUC"
                   className="block mb-2 text-sm font-medium text-gray-900"
                 >
-                  RUC
+                  Cédula
                 </label>
-                <input
-                  type="text"
-                  name="ClienteRUC"
-                  id="ClienteRUC"
-                  value={formData.ClienteRUC}
-                  onChange={handleInputChange}
-                  className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                />
+                <div className="flex gap-2 items-start">
+                  <input
+                    type="text"
+                    name="ClienteRUC"
+                    id="ClienteRUC"
+                    inputMode="numeric"
+                    placeholder="1234567"
+                    value={formData.ClienteRUC}
+                    onChange={(e) => {
+                      // Solo dígitos; permite vaciar el campo.
+                      const v = e.target.value.replace(/\D/g, "");
+                      setFormData((prev) => ({
+                        ...prev,
+                        ClienteRUC: v,
+                      }));
+                    }}
+                    className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block flex-1 p-2.5 tabular-nums"
+                  />
+                  <span className="text-gray-500 text-lg font-medium pt-2">
+                    -
+                  </span>
+                  <input
+                    type="text"
+                    readOnly
+                    aria-label="Dígito verificador (calculado)"
+                    value={
+                      formData.ClienteRUC && /^\d+$/.test(formData.ClienteRUC)
+                        ? String(calcularDV(formData.ClienteRUC))
+                        : ""
+                    }
+                    placeholder="DV"
+                    className="bg-gray-100 border border-gray-300 text-gray-700 text-sm rounded-lg block w-14 p-2.5 text-center tabular-nums"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  El dígito verificador se calcula automáticamente
+                </p>
               </div>
               <div className="col-span-6 sm:col-span-3">
                 <label

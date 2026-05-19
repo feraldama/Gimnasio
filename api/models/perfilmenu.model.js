@@ -1,5 +1,9 @@
 const db = require("../config/db");
 
+// Postgres almacena los 4 flags de permisos como SMALLINT (0/1). El frontend
+// manda booleanos JS — pg rechaza `true`/`false` para SMALLINT. Normalizamos.
+const toInt01 = (v) => (v === true || v === 1 || v === "1" ? 1 : 0);
+
 const PerfilMenu = {
   getByPerfil: (perfilId) => {
     return new Promise((resolve, reject) => {
@@ -44,10 +48,10 @@ const PerfilMenu = {
         [
           data.PerfilId,
           data.MenuId,
-          data.puedeCrear,
-          data.puedeEditar,
-          data.puedeEliminar,
-          data.puedeLeer,
+          toInt01(data.puedeCrear),
+          toInt01(data.puedeEditar),
+          toInt01(data.puedeEliminar),
+          toInt01(data.puedeLeer),
         ],
         (err, result) => {
           if (err) return reject(err);
@@ -61,10 +65,10 @@ const PerfilMenu = {
       db.query(
         "UPDATE perfilmenu SET puedeCrear=?, puedeEditar=?, puedeEliminar=?, puedeLeer=? WHERE PerfilId=? AND MenuId=?",
         [
-          data.puedeCrear,
-          data.puedeEditar,
-          data.puedeEliminar,
-          data.puedeLeer,
+          toInt01(data.puedeCrear),
+          toInt01(data.puedeEditar),
+          toInt01(data.puedeEliminar),
+          toInt01(data.puedeLeer),
           perfilId,
           menuId,
         ],

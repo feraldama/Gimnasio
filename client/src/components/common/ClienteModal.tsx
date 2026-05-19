@@ -155,7 +155,11 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
                   } hover:bg-brand-50 cursor-pointer transition-colors duration-150`}
                   onClick={() => onSelect(c)}
                 >
-                  <td className="py-2 px-4 font-num">{c.ClienteRUC || ""}</td>
+                  <td className="py-2 px-4 font-num">
+                    {c.ClienteRUC
+                      ? `${c.ClienteRUC}${c.ClienteDV ? `-${c.ClienteDV}` : ""}`
+                      : ""}
+                  </td>
                   <td className="py-2 px-4">{c.ClienteNombre}</td>
                   <td className="py-2 px-4">{c.ClienteApellido || ""}</td>
                   <td className="py-2 px-4 font-num">

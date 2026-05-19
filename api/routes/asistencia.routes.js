@@ -11,7 +11,13 @@ router.get(
   asistenciaController.estadoAcceso
 );
 router.get("/ranking", authMiddleware, asistenciaController.ranking);
+router.get(
+  "/cliente/:clienteId",
+  authMiddleware,
+  asistenciaController.porCliente
+);
 router.get("/", authMiddleware, asistenciaController.listar);
 router.post("/", authMiddleware, asistenciaController.registrar);
+router.post("/kiosko", authMiddleware, asistenciaController.kiosko);
 
 module.exports = router;

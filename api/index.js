@@ -28,6 +28,10 @@ const planRoutes = require("./routes/plan.routes");
 const suscripcionRoutes = require("./routes/suscripcion.routes");
 const pagoRoutes = require("./routes/pago.routes");
 const asistenciaRoutes = require("./routes/asistencia.routes");
+const configuracionRoutes = require("./routes/configuracion.routes");
+const canchaRoutes = require("./routes/cancha.routes");
+const canchaReservaRoutes = require("./routes/canchaReserva.routes");
+const reportesRoutes = require("./routes/reportes.routes");
 // const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
 const app = express();
@@ -93,6 +97,10 @@ app.use("/api/planes", planRoutes);
 app.use("/api/suscripciones", suscripcionRoutes);
 app.use("/api/pagos", pagoRoutes);
 app.use("/api/asistencia", asistenciaRoutes);
+app.use("/api/configuracion", configuracionRoutes);
+app.use("/api/canchas", canchaRoutes);
+app.use("/api/cancha-reservas", canchaReservaRoutes);
+app.use("/api/reportes", reportesRoutes);
 // app.use("/api/productos", productoRoutes); // Ejemplo adicional
 
 // Ruta de prueba

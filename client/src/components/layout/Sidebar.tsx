@@ -12,10 +12,7 @@ import {
   UsersIcon,
   PencilSquareIcon,
   BanknotesIcon,
-  CurrencyDollarIcon,
-  ArchiveBoxIcon,
   RectangleGroupIcon,
-  CubeIcon,
   WrenchIcon,
   LockClosedIcon,
   ChartBarIcon,
@@ -35,6 +32,13 @@ interface NavigationItem extends NavigationChild {
   icon?: React.ReactNode;
 }
 
+// Reorganización del sidebar por centros de negocio (Gimnasio / Cancha /
+// Cantina) + secciones transversales (Reportes, Caja, Modificaciones,
+// Administración). Refleja el modelo mental del cliente (whiteboard) y
+// reduce de 16 a 11 items top-level.
+//
+// Las acciones de uso diario (Asistencia, Apertura/Cierre de Caja) quedan
+// como accesos directos al tope para no requerir un click extra.
 const navigation: NavigationItem[] = [
   {
     name: "Dashboard",
@@ -42,40 +46,45 @@ const navigation: NavigationItem[] = [
     icon: <HomeIcon className="h-7 w-6" />,
   },
   {
+    name: "Asistencia",
+    href: "/asistencia",
+    icon: <KeyIcon className="h-7 w-6" />,
+  },
+  {
     name: "Apertura/Cierre de Caja",
     href: "/apertura-cierre-caja",
     icon: <LockClosedIcon className="h-7 w-6" />,
   },
   {
-    name: "Ventas",
-    href: "/ventas",
-    icon: <CurrencyDollarIcon className="h-7 w-6" />,
+    name: "Gimnasio",
+    href: "/gimnasio",
+    icon: <DocumentTextIcon className="h-7 w-6" />,
+    children: [
+      { name: "Suscripciones", href: "/suscripciones" },
+      { name: "Pagos", href: "/pagos" },
+      { name: "Planes", href: "/planes" },
+      { name: "Cobro de Créditos", href: "/credito-pagos" },
+      { name: "Reporte de Cobranza", href: "/reporte-cobranza" },
+    ],
   },
   {
-    name: "Compras",
-    href: "/compras",
-    icon: <ShoppingCartIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Cobro de Créditos",
-    href: "/credito-pagos",
-    icon: <BanknotesIcon className="h-7 w-6" />,
-  },
-
-  {
-    name: "Almacenes",
-    href: "/almacenes",
-    icon: <ArchiveBoxIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Productos",
-    href: "/products",
-    icon: <CubeIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Combos",
-    href: "/combos",
+    name: "Cancha",
+    href: "/cancha",
     icon: <RectangleGroupIcon className="h-7 w-6" />,
+    children: [{ name: "Reservas", href: "/cancha" }],
+  },
+  {
+    name: "Cantina",
+    href: "/cantina",
+    icon: <ShoppingCartIcon className="h-7 w-6" />,
+    children: [
+      { name: "Ventas (POS)", href: "/ventas" },
+      { name: "Compras", href: "/compras" },
+      { name: "Productos", href: "/products" },
+      { name: "Combos", href: "/combos" },
+      { name: "Almacenes", href: "/almacenes" },
+      { name: "Inventario", href: "/inventario" },
+    ],
   },
   {
     name: "Clientes",
@@ -84,48 +93,39 @@ const navigation: NavigationItem[] = [
   },
   {
     name: "Reportes",
-    href: "/reportes",
+    href: "/reportes-section",
     icon: <ChartBarIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Gimnasio Control",
-    href: "/gymcontrol",
-    icon: <DocumentTextIcon className="h-7 w-6" />,
     children: [
-      { name: "Planes", href: "/planes" },
-      { name: "Suscripciones", href: "/suscripciones" },
-      { name: "Pagos", href: "/pagos" },
-      { name: "Asistencia", href: "/asistencia" },
-      { name: "Reporte de Cobranza", href: "/reporte-cobranza" },
+      { name: "Reportes gráficos", href: "/reportes-graficos" },
+      { name: "Reporte clásico", href: "/reportes" },
     ],
   },
   {
-    name: "Registro Diario",
-    href: "/movements",
-    icon: <PencilSquareIcon className="h-7 w-6" />,
+    name: "Caja",
+    href: "/caja",
+    icon: <BanknotesIcon className="h-7 w-6" />,
     children: [
+      { name: "Registro Diario Caja", href: "/movements/summary" },
       { name: "Cajas", href: "/movements/cajas" },
       { name: "Tipos de Gasto", href: "/movements/tiposgasto" },
-      // { name: "Compras", href: "/movements/purchases" },
-      { name: "Registro Diario Caja", href: "/movements/summary" },
     ],
   },
   {
     name: "Modificaciones",
     href: "/modifications",
-    icon: <WrenchIcon className="h-7 w-6" />,
+    icon: <PencilSquareIcon className="h-7 w-6" />,
     children: [
-      { name: "Facturas", href: "/facturas" },
       { name: "Ventas", href: "/modifications/ventas" },
       { name: "Compras", href: "/modifications/compras" },
-      { name: "Inventario", href: "/inventario" },
+      { name: "Facturas", href: "/facturas" },
     ],
   },
   {
-    name: "Control de Acceso",
-    href: "/access-control",
-    icon: <KeyIcon className="h-7 w-6" />,
+    name: "Administración",
+    href: "/admin",
+    icon: <WrenchIcon className="h-7 w-6" />,
     children: [
+      { name: "Configuración", href: "/configuracion" },
       { name: "Locales", href: "/locales" },
       { name: "Usuarios", href: "/users" },
       { name: "Perfiles", href: "/perfiles" },
@@ -133,6 +133,7 @@ const navigation: NavigationItem[] = [
     ],
   },
 ];
+
 
 interface NavItemProps {
   item: NavigationItem;

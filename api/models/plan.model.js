@@ -1,6 +1,11 @@
 const db = require("../config/db");
 const { escapeLike } = require("../utils/sql");
 
+// Postgres almacena flags como SMALLINT (0/1). El frontend envia booleanos
+// JS (true/false), que pg rechaza con "la sintaxis de entrada no es valida
+// para tipo smallint: «true»". Normalizamos antes de cada write.
+const toInt01 = (v) => (v === true || v === 1 || v === "1" ? 1 : 0);
+
 const Plan = {
   getAll: () => {
     return new Promise((resolve, reject) => {
@@ -22,13 +27,15 @@ const Plan = {
 
   create: (planData) => {
     return new Promise((resolve, reject) => {
-      const query = `INSERT INTO plan (PlanNombre, PlanDuracion, PlanPrecio, PlanPermiteClases, PlanActivo) VALUES (?, ?, ?, ?, ?)`;
+      const query = `INSERT INTO plan (PlanNombre, PlanDuracion, PlanPrecio, PlanPermiteClases, PlanActivo, PlanModalidad, PlanCantidadClases) VALUES (?, ?, ?, ?, ?, ?, ?)`;
       const values = [
         planData.PlanNombre,
         planData.PlanDuracion,
         planData.PlanPrecio,
-        planData.PlanPermiteClases,
-        planData.PlanActivo,
+        toInt01(planData.PlanPermiteClases),
+        toInt01(planData.PlanActivo),
+        planData.PlanModalidad || "MENSUAL",
+        planData.PlanCantidadClases ?? 0,
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -42,13 +49,15 @@ const Plan = {
 
   update: (id, planData) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE plan SET PlanNombre = ?, PlanDuracion = ?, PlanPrecio = ?, PlanPermiteClases = ?, PlanActivo = ? WHERE PlanId = ?`;
+      const query = `UPDATE plan SET PlanNombre = ?, PlanDuracion = ?, PlanPrecio = ?, PlanPermiteClases = ?, PlanActivo = ?, PlanModalidad = ?, PlanCantidadClases = ? WHERE PlanId = ?`;
       const values = [
         planData.PlanNombre,
         planData.PlanDuracion,
         planData.PlanPrecio,
-        planData.PlanPermiteClases,
-        planData.PlanActivo,
+        toInt01(planData.PlanPermiteClases),
+        toInt01(planData.PlanActivo),
+        planData.PlanModalidad || "MENSUAL",
+        planData.PlanCantidadClases ?? 0,
         id,
       ];
       db.query(query, values, (err, result) => {

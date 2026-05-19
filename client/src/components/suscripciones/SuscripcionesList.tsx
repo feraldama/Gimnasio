@@ -378,7 +378,7 @@ export default function SuscripcionesList({
                     type="button"
                     onClick={() => onRenovar(suscripcion)}
                     title="Renovar suscripción"
-                    className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 mr-2"
+                    className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 mr-2 cursor-pointer"
                   >
                     <ArrowPathIcon className="h-5 w-5" />
                   </button>
@@ -388,7 +388,7 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onSuspender(suscripcion)}
                   title="Suspender suscripción"
-                  className="inline-flex items-center justify-center text-amber-600 hover:text-amber-800 mr-2"
+                  className="inline-flex items-center justify-center text-amber-600 hover:text-amber-800 mr-2 cursor-pointer"
                 >
                   <PauseIcon className="h-5 w-5" />
                 </button>
@@ -398,7 +398,7 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onCancelar(suscripcion)}
                   title="Cancelar suscripción"
-                  className="inline-flex items-center justify-center text-gray-600 hover:text-gray-800 mr-2"
+                  className="inline-flex items-center justify-center text-gray-600 hover:text-gray-800 mr-2 cursor-pointer"
                 >
                   <NoSymbolIcon className="h-5 w-5" />
                 </button>
@@ -408,7 +408,7 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onReactivar(suscripcion)}
                   title="Reactivar suscripción"
-                  className="inline-flex items-center justify-center text-green-600 hover:text-green-800 mr-2"
+                  className="inline-flex items-center justify-center text-green-600 hover:text-green-800 mr-2 cursor-pointer"
                 >
                   <ArrowUturnLeftIcon className="h-5 w-5" />
                 </button>

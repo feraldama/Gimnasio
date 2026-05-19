@@ -13,7 +13,8 @@ const Asistencia = {
         SELECT
           c.ClienteId, c.ClienteNombre, c.ClienteApellido, c.ClienteTelefono,
           s.SuscripcionId, s.SuscripcionFechaInicio, s.SuscripcionFechaFin, s.SuscripcionEstado,
-          p.PlanId, p.PlanNombre, p.PlanPermiteClases
+          s.SuscripcionClasesRestantes,
+          p.PlanId, p.PlanNombre, p.PlanPermiteClases, p.PlanModalidad, p.PlanCantidadClases
         FROM clientes c
         LEFT JOIN suscripcion s
           ON s.ClienteId = c.ClienteId
@@ -54,9 +55,12 @@ const Asistencia = {
           SuscripcionFechaInicio: r.SuscripcionFechaInicio,
           SuscripcionFechaFin: r.SuscripcionFechaFin,
           SuscripcionEstado: r.SuscripcionEstado,
+          SuscripcionClasesRestantes: r.SuscripcionClasesRestantes,
           PlanId: r.PlanId,
           PlanNombre: r.PlanNombre,
           PlanPermiteClases: r.PlanPermiteClases,
+          PlanModalidad: r.PlanModalidad || "MENSUAL",
+          PlanCantidadClases: r.PlanCantidadClases,
         };
         const permiteClases =
           r.PlanPermiteClases === 1 || r.PlanPermiteClases === true;
@@ -64,6 +68,18 @@ const Asistencia = {
           return resolve({
             permitido: false,
             motivo: "El plan no incluye acceso a clases",
+            cliente,
+            suscripcion,
+          });
+        }
+        // Modalidad CLASES: sin cupo, sin acceso.
+        if (
+          suscripcion.PlanModalidad === "CLASES" &&
+          Number(suscripcion.SuscripcionClasesRestantes || 0) <= 0
+        ) {
+          return resolve({
+            permitido: false,
+            motivo: "Cupo de clases agotado",
             cliente,
             suscripcion,
           });
@@ -78,7 +94,10 @@ const Asistencia = {
     });
   },
 
-  registrar: (clienteId) => {
+  // Registra la asistencia. Si la suscripcion activa es de modalidad CLASES,
+  // descuenta 1 del cupo (`SuscripcionClasesRestantes`) en la misma operacion.
+  // `suscripcion` viene del resultado de `estadoAcceso` para evitar otra query.
+  registrar: (clienteId, suscripcion) => {
     return new Promise((resolve, reject) => {
       const hoy = todayLocalISO();
       const sql = `
@@ -87,14 +106,36 @@ const Asistencia = {
       `;
       db.query(sql, [clienteId, hoy], (err, result) => {
         if (err) return reject(err);
-        db.query(
-          "SELECT * FROM asistencia WHERE AsistenciaId = ?",
-          [result.insertId],
-          (err2, rows) => {
-            if (err2) return reject(err2);
-            resolve(rows[0] || null);
-          }
-        );
+        const finish = () => {
+          db.query(
+            "SELECT * FROM asistencia WHERE AsistenciaId = ?",
+            [result.insertId],
+            (err2, rows) => {
+              if (err2) return reject(err2);
+              resolve(rows[0] || null);
+            }
+          );
+        };
+        if (
+          suscripcion &&
+          suscripcion.PlanModalidad === "CLASES" &&
+          suscripcion.SuscripcionId
+        ) {
+          // Atomic decrement guarded por >0 para evitar negativos en concurrencia.
+          db.query(
+            `UPDATE suscripcion
+                SET SuscripcionClasesRestantes = SuscripcionClasesRestantes - 1
+              WHERE SuscripcionId = ?
+                AND SuscripcionClasesRestantes > 0`,
+            [suscripcion.SuscripcionId],
+            (err3) => {
+              if (err3) return reject(err3);
+              finish();
+            }
+          );
+        } else {
+          finish();
+        }
       });
     });
   },
@@ -105,13 +146,16 @@ const Asistencia = {
   listarPorFecha: (fecha) => {
     return new Promise((resolve, reject) => {
       const dia = fecha || todayLocalISO();
+      // Ordenamos por AsistenciaId DESC para que el último ingresado aparezca
+      // primero. AsistenciaHoraEntrada DESC en datos seed con horas inventadas
+      // no refleja el orden real de inserción.
       const sql = `
         SELECT a.*,
           c.ClienteNombre, c.ClienteApellido, c.ClienteTelefono
         FROM asistencia a
         LEFT JOIN clientes c ON a.ClienteId = c.ClienteId
         WHERE DATE(a.AsistenciaFecha) = DATE(?)
-        ORDER BY a.AsistenciaHoraEntrada DESC
+        ORDER BY a.AsistenciaId DESC
       `;
       db.query(sql, [dia], (err, results) => {
         if (err) return reject(err);
@@ -157,6 +201,43 @@ const Asistencia = {
    * Cuántas asistencias tiene un cliente en el día dado (o hoy).
    * Para mostrar advertencia "Ya registró entrada hoy a las HH:MM" en UI.
    */
+  // Busca un cliente por su numero de cedula (ClienteRUC) con match exacto.
+  // Usado por el kiosko de auto-registro: el cliente tipea su CI y queremos
+  // resolver a un unico ClienteId. Trim/lower para tolerar leading zeros y
+  // espacios accidentales del teclado.
+  buscarPorRUC: (ruc) => {
+    return new Promise((resolve, reject) => {
+      const clean = String(ruc || "").trim();
+      if (!clean) return resolve(null);
+      db.query(
+        "SELECT ClienteId FROM clientes WHERE ClienteRUC = ? LIMIT 1",
+        [clean],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows.length ? rows[0] : null);
+        }
+      );
+    });
+  },
+
+  // Lista las ultimas asistencias de un cliente para mostrar en la ficha.
+  // Por defecto trae los ultimos 90 dias y limita el numero de filas.
+  porCliente: (clienteId, limit = 100) => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT AsistenciaId, ClienteId, AsistenciaFecha, AsistenciaHoraEntrada
+        FROM asistencia
+        WHERE ClienteId = ?
+        ORDER BY AsistenciaFecha DESC, AsistenciaHoraEntrada DESC
+        LIMIT ?
+      `;
+      db.query(sql, [clienteId, Number(limit)], (err, results) => {
+        if (err) return reject(err);
+        resolve(results);
+      });
+    });
+  },
+
   asistenciaDelClienteHoy: (clienteId, fecha) => {
     return new Promise((resolve, reject) => {
       const dia = fecha || todayLocalISO();

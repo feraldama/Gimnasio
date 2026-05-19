@@ -81,7 +81,14 @@ export default function CustomersList({
   };
   const columns = [
     { key: "ClienteId", label: "ID" },
-    { key: "ClienteRUC", label: "RUC" },
+    {
+      key: "ClienteRUC",
+      label: "RUC",
+      render: (c: Cliente) =>
+        c.ClienteRUC
+          ? `${c.ClienteRUC}${c.ClienteDV ? `-${c.ClienteDV}` : ""}`
+          : "",
+    },
     { key: "ClienteNombre", label: "Nombre" },
     { key: "ClienteApellido", label: "Apellido" },
     { key: "ClienteDireccion", label: "Dirección" },

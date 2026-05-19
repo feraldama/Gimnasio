@@ -26,6 +26,7 @@ interface VentaProducto {
 interface VentaCompleta extends Venta {
   ClienteRazonSocial?: string;
   ClienteRUC?: string;
+  ClienteDV?: string;
   ClienteTelefono?: string;
   ClienteDireccion?: string;
   VentaProductos?: VentaProducto[];
@@ -87,6 +88,7 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 cliente.ClienteRazonSocial ||
                 `${cliente.ClienteNombre} ${cliente.ClienteApellido}`.trim(),
               ClienteRUC: cliente.ClienteRUC || "",
+              ClienteDV: cliente.ClienteDV || "",
               ClienteTelefono: cliente.ClienteTelefono || "",
               ClienteDireccion: cliente.ClienteDireccion || "",
             };
@@ -102,6 +104,7 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               ...venta,
               ClienteRazonSocial: "Cliente no encontrado",
               ClienteRUC: "",
+              ClienteDV: "",
               ClienteTelefono: "",
               ClienteDireccion: "",
             };
@@ -512,7 +515,11 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               venta.ClienteRazonSocial || "N/A"
             }</p>
             <p style="margin-left: 280px;">
-              <span>${venta.ClienteRUC || "N/A"}</span>
+              <span>${
+                venta.ClienteRUC
+                  ? `${venta.ClienteRUC}${venta.ClienteDV ? `-${venta.ClienteDV}` : ""}`
+                  : "N/A"
+              }</span>
               <span style="margin-left: 75px;">${
                 venta.ClienteTelefono || ""
               }</span>
@@ -848,7 +855,13 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                   </p>
                   <p>
                     <strong>RUC:</strong>{" "}
-                    {ventaSeleccionada.ClienteRUC || "N/A"}
+                    {ventaSeleccionada.ClienteRUC
+                      ? `${ventaSeleccionada.ClienteRUC}${
+                          ventaSeleccionada.ClienteDV
+                            ? `-${ventaSeleccionada.ClienteDV}`
+                            : ""
+                        }`
+                      : "N/A"}
                   </p>
                   <p>
                     <strong>Dirección:</strong>{" "}

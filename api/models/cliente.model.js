@@ -1,4 +1,16 @@
 const db = require("../config/db");
+const { calcularDV } = require("../utils/rucDv");
+
+// Calcula el DV automaticamente cuando la CI es estrictamente numerica.
+// Si la CI esta vacia o trae caracteres no numericos (placeholders tipo
+// "SIN RUC"), dejamos el DV vacio para no inventar datos. El usuario solo
+// carga la CI; este helper mantiene la columna `ClienteDV` sincronizada.
+function dvParaRUC(ruc) {
+  const limpio = String(ruc ?? "").trim();
+  if (!limpio) return "";
+  if (!/^\d+$/.test(limpio)) return "";
+  return String(calcularDV(limpio));
+}
 
 function buildClienteFiltersWhere(filters = {}) {
   const conditions = [];
@@ -164,19 +176,23 @@ const Cliente = {
 
   create: (clienteData) => {
     return new Promise((resolve, reject) => {
+      const ruc = clienteData.ClienteRUC || "";
+      const dv = dvParaRUC(ruc);
       const query = `
         INSERT INTO clientes (
           ClienteRUC,
+          ClienteDV,
           ClienteNombre,
           ClienteApellido,
           ClienteDireccion,
           ClienteTelefono,
           ClienteTipo,
           UsuarioId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
-        clienteData.ClienteRUC || "",
+        ruc,
+        dv,
         clienteData.ClienteNombre,
         clienteData.ClienteApellido || "",
         clienteData.ClienteDireccion || "",
@@ -186,7 +202,7 @@ const Cliente = {
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
-        resolve({ ...clienteData, ClienteId: result.insertId });
+        resolve({ ...clienteData, ClienteDV: dv, ClienteId: result.insertId });
       });
     });
   },
@@ -215,6 +231,16 @@ const Cliente = {
           }
         }
       });
+      // Si actualizan el RUC, recalculamos el DV. Si pasaron explicitamente
+      // un ClienteDV se respeta (caso raro: ediciones manuales de personas
+      // juridicas con DV peculiar); sino tomamos el calculado.
+      if (clienteData.ClienteRUC !== undefined && clienteData.ClienteDV === undefined) {
+        updateFields.push("ClienteDV = ?");
+        values.push(dvParaRUC(clienteData.ClienteRUC));
+      } else if (clienteData.ClienteDV !== undefined) {
+        updateFields.push("ClienteDV = ?");
+        values.push(String(clienteData.ClienteDV));
+      }
       if (updateFields.length === 0) {
         return resolve(null);
       }

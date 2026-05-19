@@ -12,14 +12,14 @@ const Suscripcion = {
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
-            WHEN COALESCE(pg.TotalPagado, 0) >= p.PlanPrecio THEN 'PAGADA'
+            WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
           END as EstadoPago
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as TotalPagado
+          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
           FROM pago GROUP BY SuscripcionId
         ) pg ON pg.SuscripcionId = s.SuscripcionId
       `;
@@ -56,20 +56,39 @@ const Suscripcion = {
           suscripcionData.SuscripcionFechaInicio,
           suscripcionData.SuscripcionFechaFin
         );
-      const query = `INSERT INTO suscripcion (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado) VALUES (?, ?, ?, ?, ?)`;
-      const values = [
-        suscripcionData.ClienteId,
-        suscripcionData.PlanId,
-        suscripcionData.SuscripcionFechaInicio,
-        suscripcionData.SuscripcionFechaFin,
-        estado,
-      ];
-      db.query(query, values, (err, result) => {
-        if (err) return reject(err);
-        Suscripcion.getById(result.insertId)
-          .then((suscripcion) => resolve(suscripcion))
-          .catch((error) => reject(error));
-      });
+      // Para modalidad CLASES inicializamos el cupo desde el plan asociado.
+      // Para MENSUAL/OPEN queda en 0 (no se usa).
+      db.query(
+        "SELECT PlanModalidad, PlanCantidadClases FROM plan WHERE PlanId = ?",
+        [suscripcionData.PlanId],
+        (err, planRows) => {
+          if (err) return reject(err);
+          const modalidad = planRows[0]?.PlanModalidad || "MENSUAL";
+          const cupoInicial =
+            modalidad === "CLASES"
+              ? Number(planRows[0]?.PlanCantidadClases || 0)
+              : 0;
+          const clasesRestantes =
+            suscripcionData.SuscripcionClasesRestantes !== undefined
+              ? Number(suscripcionData.SuscripcionClasesRestantes)
+              : cupoInicial;
+          const query = `INSERT INTO suscripcion (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado, SuscripcionClasesRestantes) VALUES (?, ?, ?, ?, ?, ?)`;
+          const values = [
+            suscripcionData.ClienteId,
+            suscripcionData.PlanId,
+            suscripcionData.SuscripcionFechaInicio,
+            suscripcionData.SuscripcionFechaFin,
+            estado,
+            clasesRestantes,
+          ];
+          db.query(query, values, (err2, result) => {
+            if (err2) return reject(err2);
+            Suscripcion.getById(result.insertId)
+              .then((suscripcion) => resolve(suscripcion))
+              .catch((error) => reject(error));
+          });
+        }
+      );
     });
   },
 
@@ -154,14 +173,14 @@ const Suscripcion = {
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
-            WHEN COALESCE(pg.TotalPagado, 0) >= p.PlanPrecio THEN 'PAGADA'
+            WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
           END as EstadoPago
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as TotalPagado
+          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
           FROM pago GROUP BY SuscripcionId
         ) pg ON pg.SuscripcionId = s.SuscripcionId
         ORDER BY ${orderByField} ${order}
@@ -226,14 +245,14 @@ const Suscripcion = {
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
-            WHEN COALESCE(pg.TotalPagado, 0) >= p.PlanPrecio THEN 'PAGADA'
+            WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
           END as EstadoPago
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as TotalPagado
+          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
           FROM pago GROUP BY SuscripcionId
         ) pg ON pg.SuscripcionId = s.SuscripcionId
         WHERE c.ClienteNombre LIKE ?
@@ -285,15 +304,15 @@ const Suscripcion = {
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
-            WHEN COALESCE(pg.TotalPagado, 0) >= p.PlanPrecio THEN 'PAGADA'
+            WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
           END as EstadoPago,
-          COALESCE(pg.TotalPagado, 0) as TotalPagado
+          COALESCE(pg.totalpagado, 0) as TotalPagado
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as TotalPagado
+          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
           FROM pago GROUP BY SuscripcionId
         ) pg ON pg.SuscripcionId = s.SuscripcionId
         WHERE s.ClienteId = ?
@@ -323,20 +342,20 @@ const Suscripcion = {
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
-            WHEN COALESCE(pg.TotalPagado, 0) >= p.PlanPrecio THEN 'PAGADA'
+            WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
           END as EstadoPago
         FROM suscripcion s
         INNER JOIN (
-          SELECT ClienteId, MAX(SuscripcionFechaFin) as MaxFechaFin
+          SELECT ClienteId, MAX(SuscripcionFechaFin) as maxfechafin
           FROM suscripcion
           WHERE SuscripcionFechaFin IS NOT NULL
           GROUP BY ClienteId
-        ) latest ON s.ClienteId = latest.ClienteId AND s.SuscripcionFechaFin = latest.MaxFechaFin
+        ) latest ON s.ClienteId = latest.ClienteId AND s.SuscripcionFechaFin = latest.maxfechafin
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as TotalPagado
+          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
           FROM pago GROUP BY SuscripcionId
         ) pg ON pg.SuscripcionId = s.SuscripcionId
         WHERE s.SuscripcionFechaFin IS NOT NULL

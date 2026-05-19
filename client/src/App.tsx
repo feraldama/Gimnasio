@@ -38,6 +38,11 @@ import PagosPage from "./pages/pagos/PagosPage";
 import ReporteCobranzaPage from "./pages/pagos/ReporteCobranzaPage";
 import HistorialClientePage from "./pages/suscripciones/HistorialClientePage";
 import AsistenciaPage from "./pages/asistencia/AsistenciaPage";
+import ConfiguracionPage from "./pages/configuracion/ConfiguracionPage";
+import CanchaPage from "./pages/cancha/CanchaPage";
+import ReportesGraficosPage from "./pages/dashboard/ReportesGraficosPage";
+import FichaAlumnoPage from "./pages/customers/FichaAlumnoPage";
+import KioskoAsistenciaPage from "./pages/asistencia/KioskoAsistenciaPage";
 
 function App() {
   return (
@@ -71,6 +76,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Inventario />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/kiosko-asistencia"
+            element={
+              <PrivateRoute>
+                <KioskoAsistenciaPage />
               </PrivateRoute>
             }
           />
@@ -117,6 +130,16 @@ function App() {
               element={<HistorialClientePage />}
             />
             <Route path="/asistencia" element={<AsistenciaPage />} />
+            <Route path="/configuracion" element={<ConfiguracionPage />} />
+            <Route path="/cancha" element={<CanchaPage />} />
+            <Route
+              path="/reportes-graficos"
+              element={<ReportesGraficosPage />}
+            />
+            <Route
+              path="/clientes/:id/ficha"
+              element={<FichaAlumnoPage />}
+            />
           </Route>
 
           <Route path="*" element={<NotFound />} />

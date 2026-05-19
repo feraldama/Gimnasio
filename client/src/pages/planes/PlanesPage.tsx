@@ -20,6 +20,8 @@ interface Plan {
   PlanPrecio: number;
   PlanPermiteClases: boolean | number;
   PlanActivo: boolean | number;
+  PlanModalidad?: string;
+  PlanCantidadClases?: number;
   [key: string]: unknown;
 }
 

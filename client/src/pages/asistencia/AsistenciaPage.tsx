@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import {
   CheckCircleIcon,
   XCircleIcon,
   UserIcon,
   ClockIcon,
+  ComputerDesktopIcon,
 } from "@heroicons/react/24/outline";
 import ClienteModal from "../../components/common/ClienteModal";
 import { useAuth } from "../../contexts/useAuth";
@@ -35,15 +36,33 @@ interface AsistenciaItem {
 
 const formatHora = (dt: string): string => {
   if (!dt) return "—";
-  // dt viene como "YYYY-MM-DD HH:mm:ss" o ISO con Z. Tomamos solo la parte de hora.
-  const m = dt.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!m) return "—";
-  return `${m[1]}:${m[2]}`;
+  // Postgres devuelve el timestamp como ISO en UTC (porque la columna es
+  // `timestamp without time zone`). Para mostrar la hora real al usuario en
+  // su zona local, parseamos a Date y leemos getHours/getMinutes/getSeconds —
+  // que aplican la zona horaria del navegador.
+  const d = new Date(dt);
+  if (isNaN(d.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
 export default function AsistenciaPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const puedeLeer = usePermiso("ASISTENCIA", "leer");
+  const puedeKiosko = usePermiso("KIOSKOASISTENCIA", "leer");
+
+  const abrirKiosko = async () => {
+    // Intenta poner el navegador en fullscreen antes de navegar; el gesto del
+    // click satisface el requerimiento de user activation. Si falla (Safari,
+    // navegadores en kiosko, etc.) seguimos sin fullscreen.
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      /* sin fullscreen */
+    }
+    navigate("/kiosko-asistencia");
+  };
 
   // Reutilizamos el hook para tener la lista completa de clientes en el modal
   const { clientes, selectCliente, showClienteModal, setShowClienteModal } =
@@ -129,7 +148,20 @@ export default function AsistenciaPage() {
 
   return (
     <div className="container mx-auto px-4">
-      <h1 className="text-2xl font-medium mb-4">Control de asistencia</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-medium">Control de asistencia</h1>
+        {puedeKiosko && (
+          <button
+            type="button"
+            onClick={abrirKiosko}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg px-4 py-2.5 inline-flex items-center gap-2 cursor-pointer"
+            title="Pantalla de auto-registro para clientes (full-screen)"
+          >
+            <ComputerDesktopIcon className="w-5 h-5" />
+            Modo kiosko
+          </button>
+        )}
+      </div>
 
       {/* Selector de cliente + semáforo */}
       <div className="bg-white p-4 rounded-lg shadow mb-4">
@@ -137,7 +169,7 @@ export default function AsistenciaPage() {
           <button
             type="button"
             onClick={() => setShowClienteModal(true)}
-            className="bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg px-5 py-2.5 inline-flex items-center gap-2"
+            className="bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg px-5 py-2.5 inline-flex items-center gap-2 cursor-pointer"
           >
             <UserIcon className="w-5 h-5" />
             Buscar cliente
@@ -176,7 +208,7 @@ export default function AsistenciaPage() {
                 {estado.cliente && (
                   <div className="text-sm mt-1">
                     <Link
-                      to={`/clientes/${estado.cliente.ClienteId}/historial-gimnasio`}
+                      to={`/clientes/${estado.cliente.ClienteId}/ficha`}
                       className="font-medium text-blue-700 hover:underline"
                     >
                       {estado.cliente.ClienteNombre}{" "}
@@ -232,13 +264,31 @@ export default function AsistenciaPage() {
       <div className="bg-white rounded-lg shadow">
         <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-lg font-medium">Asistencias</h2>
-          <input
-            type="date"
-            value={fecha}
-            max={todayLocalISO()}
-            onChange={(e) => setFecha(e.target.value)}
-            className="bg-gray-50 border border-gray-300 text-sm rounded-lg p-2"
-          />
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+            <label
+              htmlFor="filtro-fecha"
+              className="text-sm font-medium text-blue-900 whitespace-nowrap"
+            >
+              Mostrando asistencias del:
+            </label>
+            <input
+              id="filtro-fecha"
+              type="date"
+              value={fecha}
+              max={todayLocalISO()}
+              onChange={(e) => setFecha(e.target.value)}
+              className="bg-white border border-blue-300 text-base font-semibold text-blue-900 rounded-md px-3 py-1.5 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
+            />
+            {fecha !== todayLocalISO() && (
+              <button
+                type="button"
+                onClick={() => setFecha(todayLocalISO())}
+                className="text-xs font-medium text-blue-700 hover:text-blue-900 underline cursor-pointer"
+              >
+                Ir a hoy
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto border-t border-gray-200">
           <table className="min-w-full text-sm">
