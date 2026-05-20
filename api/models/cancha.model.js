@@ -160,6 +160,21 @@ const Cancha = {
     });
   },
 
+  // Cuenta las reservas asociadas a una cancha. El controlador la usa para
+  // decidir si bloquear el DELETE y sugerir desactivacion en su lugar.
+  countReservas: (id) => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        "SELECT COUNT(*) AS total FROM cancha_reserva WHERE CanchaId = ?",
+        [id],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(Number(rows[0]?.total || 0));
+        }
+      );
+    });
+  },
+
   delete: (id) => {
     return new Promise((resolve, reject) => {
       db.query("DELETE FROM cancha WHERE CanchaId = ?", [id], (err, result) => {

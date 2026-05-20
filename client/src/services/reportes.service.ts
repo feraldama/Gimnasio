@@ -55,9 +55,14 @@ export interface ReporteCantinaResponse {
   totalRecaudado: number;
 }
 
-async function fetchReporte<T>(path: string, anio: number, mes: number): Promise<T> {
+async function fetchReporte<T>(
+  path: string,
+  anio: number,
+  mes: number,
+  extraParams: Record<string, string | number | undefined> = {}
+): Promise<T> {
   try {
-    const r = await api.get(path, { params: { anio, mes } });
+    const r = await api.get(path, { params: { anio, mes, ...extraParams } });
     return r.data as T;
   } catch (e) {
     const ax = e as AxiosError<{ error?: string; message?: string }>;
@@ -72,6 +77,82 @@ export const getReporteGimnasioOcupacion = (anio: number, mes: number) =>
 
 export const getReporteCanchaDiario = (anio: number, mes: number) =>
   fetchReporte<ReporteCanchaResponse>("/reportes/cancha/diario", anio, mes);
+
+// ---------- Desglose mensual de Cancha ----------
+export interface ReporteCanchaDesglosePorCancha {
+  canchaId: number;
+  canchaNombre: string;
+  ingreso: number;
+  reservas: number;
+  horasOcupadas: number;
+  horasDisponibles: number;
+  ocupacionPct: number;
+}
+
+export interface ReporteCanchaDesglosePorBanda {
+  bandaId: number | null;
+  nombre: string;
+  ingreso: number;
+  reservas: number;
+}
+
+export interface ReporteCanchaDesgloseResponse {
+  anio: number;
+  mes: number;
+  horario: { inicio: number; fin: number; horasPorDia: number };
+  totales: {
+    ingreso: number;
+    reservas: number;
+    horasOcupadas: number;
+    horasDisponibles: number;
+    ocupacionPct: number;
+  };
+  porCancha: ReporteCanchaDesglosePorCancha[];
+  porBanda: ReporteCanchaDesglosePorBanda[];
+}
+
+export const getReporteCanchaDesglose = (
+  anio: number,
+  mes: number,
+  canchaId?: number | null
+) =>
+  fetchReporte<ReporteCanchaDesgloseResponse>(
+    "/reportes/cancha/desglose",
+    anio,
+    mes,
+    canchaId ? { canchaId } : {}
+  );
+
+// ---------- Heatmap día-semana × hora ----------
+export interface HeatmapCelda {
+  dia: number; // 0=Lun..6=Dom
+  hora: number;
+  reservas: number;
+  ingreso: number;
+}
+
+export interface ReporteHeatmapResponse {
+  anio: number;
+  mes: number;
+  horario: { inicio: number; fin: number; horasPorDia: number };
+  horas: number[];
+  matriz: HeatmapCelda[];
+  top: HeatmapCelda[];
+  porDia: { dia: number; reservas: number; ingreso: number }[];
+  totales: { reservas: number; ingreso: number };
+}
+
+export const getReporteCanchaHeatmap = (
+  anio: number,
+  mes: number,
+  canchaId?: number | null
+) =>
+  fetchReporte<ReporteHeatmapResponse>(
+    "/reportes/cancha/heatmap",
+    anio,
+    mes,
+    canchaId ? { canchaId } : {}
+  );
 
 export const getReporteCantinaDiario = (anio: number, mes: number) =>
   fetchReporte<ReporteCantinaResponse>("/reportes/cantina/diario", anio, mes);

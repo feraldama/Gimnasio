@@ -6,6 +6,9 @@ import {
   BarChart,
   Bar,
   ComposedChart,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -26,11 +29,19 @@ import {
   getReporteGimnasioOcupacion,
   getReporteCanchaDiario,
   getReporteCantinaDiario,
+  getReporteCanchaDesglose,
+  getReporteCanchaHeatmap,
   type ReporteGimnasioResponse,
   type ReporteCanchaResponse,
   type ReporteCantinaResponse,
+  type ReporteCanchaDesgloseResponse,
+  type ReporteHeatmapResponse,
 } from "../../services/reportes.service";
 import { formatMiles } from "../../utils/utils";
+import {
+  getCanchasActivas,
+  type Cancha,
+} from "../../services/cancha.service";
 
 const MESES = [
   "Enero",
@@ -60,6 +71,11 @@ export default function ReportesGraficosPage() {
   const [gimnasio, setGimnasio] = useState<ReporteGimnasioResponse | null>(null);
   const [cancha, setCancha] = useState<ReporteCanchaResponse | null>(null);
   const [cantina, setCantina] = useState<ReporteCantinaResponse | null>(null);
+  const [canchaDesglose, setCanchaDesglose] =
+    useState<ReporteCanchaDesgloseResponse | null>(null);
+  const [heatmap, setHeatmap] = useState<ReporteHeatmapResponse | null>(null);
+  const [canchaFiltro, setCanchaFiltro] = useState<number | null>(null);
+  const [canchasOpts, setCanchasOpts] = useState<Cancha[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,14 +84,18 @@ export default function ReportesGraficosPage() {
     try {
       setLoading(true);
       setError(null);
-      const [g, ca, ct] = await Promise.all([
+      const [g, ca, ct, cd, hm] = await Promise.all([
         getReporteGimnasioOcupacion(anio, mes),
         getReporteCanchaDiario(anio, mes),
         getReporteCantinaDiario(anio, mes),
+        getReporteCanchaDesglose(anio, mes, canchaFiltro),
+        getReporteCanchaHeatmap(anio, mes, canchaFiltro),
       ]);
       setGimnasio(g);
       setCancha(ca);
       setCantina(ct);
+      setCanchaDesglose(cd);
+      setHeatmap(hm);
     } catch (e: unknown) {
       const msg =
         e && typeof e === "object" && "message" in e
@@ -85,7 +105,20 @@ export default function ReportesGraficosPage() {
     } finally {
       setLoading(false);
     }
-  }, [anio, mes]);
+  }, [anio, mes, canchaFiltro]);
+
+  // Cargar lista de canchas una sola vez para el selector de filtro.
+  useEffect(() => {
+    if (!puedeLeer) return;
+    (async () => {
+      try {
+        const r = await getCanchasActivas();
+        setCanchasOpts(r.data);
+      } catch {
+        /* silenciar; el filtro queda vacio */
+      }
+    })();
+  }, [puedeLeer]);
 
   useEffect(() => {
     if (puedeLeer) fetchAll();
@@ -236,6 +269,410 @@ export default function ReportesGraficosPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </Card>
+      )}
+
+      {!loading && !error && canchaDesglose && (
+        <Card>
+          <CardHeader
+            title="Cancha — Desglose mensual"
+            description={`Reservas activas del mes agrupadas por cancha y por banda de tarifa. Horario operativo: ${String(
+              canchaDesglose.horario.inicio
+            ).padStart(2, "0")}:00 — ${String(
+              canchaDesglose.horario.fin
+            ).padStart(2, "0")}:00 (${
+              canchaDesglose.horario.horasPorDia
+            } h/día).`}
+            actions={
+              canchasOpts.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 whitespace-nowrap">
+                    Filtrar por cancha:
+                  </label>
+                  <select
+                    className="bg-white border border-gray-300 text-sm rounded-md px-3 py-1.5 cursor-pointer"
+                    value={canchaFiltro ?? ""}
+                    onChange={(e) =>
+                      setCanchaFiltro(
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                  >
+                    <option value="">Todas</option>
+                    {canchasOpts.map((c) => (
+                      <option key={c.CanchaId} value={c.CanchaId}>
+                        {c.CanchaNombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
+            }
+          />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <StatCard
+              label="Reservas del mes"
+              value={String(canchaDesglose.totales.reservas)}
+            />
+            <StatCard
+              label="Ingreso total"
+              value={`Gs. ${formatMiles(canchaDesglose.totales.ingreso)}`}
+              tone="brand"
+            />
+            <StatCard
+              label="Horas ocupadas"
+              value={`${canchaDesglose.totales.horasOcupadas.toFixed(1)} h`}
+              hint={`de ${canchaDesglose.totales.horasDisponibles} h disp.`}
+            />
+            <StatCard
+              label="Ocupación global"
+              value={`${canchaDesglose.totales.ocupacionPct.toFixed(1)}%`}
+              tone={
+                canchaDesglose.totales.ocupacionPct >= 50 ? "success" : "warning"
+              }
+            />
+          </div>
+
+          {/* Por cancha — bar chart con ingreso + ocupación */}
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            Por cancha
+          </h3>
+          {canchaDesglose.porCancha.length === 0 ? (
+            <div className="text-sm text-gray-500 py-2 mb-4">
+              Sin reservas pagadas en este mes.
+            </div>
+          ) : (
+            <div style={{ width: "100%", height: 260 }} className="mb-4">
+              <ResponsiveContainer>
+                <ComposedChart data={canchaDesglose.porCancha}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="canchaNombre" />
+                  <YAxis
+                    yAxisId="left"
+                    tickFormatter={(v) => formatMiles(v as number)}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip
+                    formatter={(v, name) =>
+                      String(name).includes("%")
+                        ? `${Number(v).toFixed(1)}%`
+                        : `Gs. ${formatMiles(Number(v) || 0)}`
+                    }
+                  />
+                  <Legend />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="ingreso"
+                    fill="#2563eb"
+                    name="Ingreso"
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="ocupacionPct"
+                    stroke="#16a34a"
+                    strokeWidth={2}
+                    name="Ocupación %"
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Tabla compacta por cancha */}
+          {canchaDesglose.porCancha.length > 0 && (
+            <div className="overflow-x-auto mb-6">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Cancha</th>
+                    <th className="px-3 py-2 text-right">Reservas</th>
+                    <th className="px-3 py-2 text-right">Horas ocupadas</th>
+                    <th className="px-3 py-2 text-right">Ocupación</th>
+                    <th className="px-3 py-2 text-right">Ingreso</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {canchaDesglose.porCancha.map((c) => (
+                    <tr key={c.canchaId}>
+                      <td className="px-3 py-2 font-medium">{c.canchaNombre}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {c.reservas}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {c.horasOcupadas.toFixed(1)} h
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {c.ocupacionPct.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        Gs. {formatMiles(c.ingreso)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Por banda — pie chart */}
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            Por banda de tarifa
+          </h3>
+          {canchaDesglose.porBanda.length === 0 ? (
+            <div className="text-sm text-gray-500 py-2">
+              Sin desglose por banda (no hay reservas o no hay tarifas
+              definidas).
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+              <div style={{ width: "100%", height: 240 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={canchaDesglose.porBanda}
+                      dataKey="ingreso"
+                      nameKey="nombre"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      label={(entry) => {
+                        const e = entry as { name?: string };
+                        return e.name || "";
+                      }}
+                    >
+                      {canchaDesglose.porBanda.map((_, i) => (
+                        <Cell
+                          key={`cell-${i}`}
+                          fill={
+                            [
+                              "#2563eb",
+                              "#16a34a",
+                              "#f59e0b",
+                              "#dc2626",
+                              "#7c3aed",
+                              "#0891b2",
+                            ][i % 6]
+                          }
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v) => `Gs. ${formatMiles(Number(v) || 0)}`}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Banda</th>
+                      <th className="px-3 py-2 text-right">Reservas</th>
+                      <th className="px-3 py-2 text-right">Ingreso</th>
+                      <th className="px-3 py-2 text-right">%</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {canchaDesglose.porBanda.map((b) => {
+                      const pct =
+                        canchaDesglose.totales.ingreso > 0
+                          ? (b.ingreso / canchaDesglose.totales.ingreso) * 100
+                          : 0;
+                      return (
+                        <tr key={b.bandaId ?? "sin"}>
+                          <td className="px-3 py-2 font-medium">{b.nombre}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {b.reservas}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            Gs. {formatMiles(b.ingreso)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {pct.toFixed(1)}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {!loading && !error && heatmap && (
+        <Card>
+          <CardHeader
+            title="Cancha — Horas pico"
+            description="Reservas activas agrupadas por día de semana y hora del día. El color indica densidad."
+          />
+          {heatmap.totales.reservas === 0 ? (
+            <div className="text-sm text-gray-500 py-3">
+              Sin reservas para calcular el heatmap.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Heatmap grid */}
+              <div className="lg:col-span-2 overflow-x-auto">
+                <table className="text-xs border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-gray-500 font-normal w-12"></th>
+                      {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map(
+                        (d) => (
+                          <th
+                            key={d}
+                            className="px-2 py-1 text-gray-700 font-semibold text-center w-14"
+                          >
+                            {d}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {heatmap.horas.map((h) => (
+                      <tr key={`hm-${h}`}>
+                        <td className="px-2 py-0.5 text-gray-500 text-right tabular-nums">
+                          {String(h).padStart(2, "0")}:00
+                        </td>
+                        {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+                          const cell = heatmap.matriz.find(
+                            (c) => c.dia === d && c.hora === h
+                          );
+                          const n = cell?.reservas || 0;
+                          // Intensidad relativa al máximo del heatmap.
+                          const max = Math.max(
+                            ...heatmap.matriz.map((c) => c.reservas),
+                            1
+                          );
+                          const pct = n / max;
+                          // Color en escala azul: opacity por intensidad.
+                          const bg =
+                            n === 0
+                              ? "bg-gray-50"
+                              : pct < 0.25
+                              ? "bg-blue-100"
+                              : pct < 0.5
+                              ? "bg-blue-200"
+                              : pct < 0.75
+                              ? "bg-blue-400 text-white"
+                              : "bg-blue-600 text-white";
+                          return (
+                            <td
+                              key={`cell-${d}-${h}`}
+                              className={`px-1 py-0.5 text-center tabular-nums border border-white ${bg}`}
+                              title={`${["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"][d]} ${String(
+                                h
+                              ).padStart(2, "0")}:00 — ${n} reserva${n === 1 ? "" : "s"}`}
+                            >
+                              {n > 0 ? n : ""}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Ranking horas pico + por día */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    Top 5 horas pico
+                  </h3>
+                  {heatmap.top.length === 0 ? (
+                    <div className="text-xs text-gray-500">
+                      No hay datos suficientes.
+                    </div>
+                  ) : (
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="px-2 py-1 text-left">#</th>
+                          <th className="px-2 py-1 text-left">Día</th>
+                          <th className="px-2 py-1 text-left">Hora</th>
+                          <th className="px-2 py-1 text-right">Reservas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {heatmap.top.map((t, i) => (
+                          <tr key={`top-${i}`}>
+                            <td className="px-2 py-1 tabular-nums">{i + 1}</td>
+                            <td className="px-2 py-1">
+                              {
+                                ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"][
+                                  t.dia
+                                ]
+                              }
+                            </td>
+                            <td className="px-2 py-1 tabular-nums">
+                              {String(t.hora).padStart(2, "0")}:00
+                            </td>
+                            <td className="px-2 py-1 text-right tabular-nums font-semibold">
+                              {t.reservas}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    Por día de la semana
+                  </h3>
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Día</th>
+                        <th className="px-2 py-1 text-right">Reservas</th>
+                        <th className="px-2 py-1 text-right">Ingreso</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {heatmap.porDia
+                        .slice()
+                        .sort((a, b) => b.reservas - a.reservas)
+                        .map((d) => (
+                          <tr key={`pd-${d.dia}`}>
+                            <td className="px-2 py-1">
+                              {
+                                [
+                                  "Lunes",
+                                  "Martes",
+                                  "Miércoles",
+                                  "Jueves",
+                                  "Viernes",
+                                  "Sábado",
+                                  "Domingo",
+                                ][d.dia]
+                              }
+                            </td>
+                            <td className="px-2 py-1 text-right tabular-nums">
+                              {d.reservas}
+                            </td>
+                            <td className="px-2 py-1 text-right tabular-nums">
+                              Gs. {formatMiles(d.ingreso)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

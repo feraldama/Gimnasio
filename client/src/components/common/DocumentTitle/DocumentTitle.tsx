@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
+// Mapeo de paths estáticos → título de pestaña.
 const ROUTE_TITLES: Record<string, string> = {
   "/login": "Iniciar sesión",
   "/dashboard": "Dashboard",
@@ -27,14 +28,36 @@ const ROUTE_TITLES: Record<string, string> = {
   "/pagos": "Pagos",
   "/reportes": "Reportes",
   "/facturas": "Facturas",
+  "/asistencia": "Asistencia",
+  "/kiosko-asistencia": "Kiosko de asistencia",
+  "/reporte-cobranza": "Reporte de cobranza",
+  "/configuracion": "Configuración",
+  "/cancha": "Cancha — Reservas",
+  "/canchas": "Cancha — Catálogo",
+  "/cancha/calendario": "Cancha — Calendario",
+  "/cancha/tarifas": "Cancha — Tarifas",
+  "/reportes-graficos": "Reportes gráficos",
 };
+
+// Patrones para rutas dinámicas. Se evalúan en orden si no hubo match exacto.
+const DYNAMIC_TITLES: Array<{ pattern: RegExp; title: string }> = [
+  { pattern: /^\/clientes\/[^/]+\/historial-gimnasio$/, title: "Historial del cliente" },
+  { pattern: /^\/clientes\/[^/]+\/ficha$/, title: "Ficha del alumno" },
+];
+
+function resolveTitle(pathname: string): string {
+  if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
+  for (const d of DYNAMIC_TITLES) {
+    if (d.pattern.test(pathname)) return d.title;
+  }
+  return "Página no encontrada";
+}
 
 function DocumentTitle() {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    const pageTitle = ROUTE_TITLES[pathname] || "Página no encontrada";
-    document.title = `${pageTitle}`;
+    document.title = resolveTitle(pathname);
   }, [pathname]);
 
   return null;

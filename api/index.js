@@ -31,6 +31,7 @@ const asistenciaRoutes = require("./routes/asistencia.routes");
 const configuracionRoutes = require("./routes/configuracion.routes");
 const canchaRoutes = require("./routes/cancha.routes");
 const canchaReservaRoutes = require("./routes/canchaReserva.routes");
+const canchaTarifaRoutes = require("./routes/canchaTarifa.routes");
 const reportesRoutes = require("./routes/reportes.routes");
 // const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
@@ -100,6 +101,7 @@ app.use("/api/asistencia", asistenciaRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/canchas", canchaRoutes);
 app.use("/api/cancha-reservas", canchaReservaRoutes);
+app.use("/api/cancha-tarifas", canchaTarifaRoutes);
 app.use("/api/reportes", reportesRoutes);
 // app.use("/api/productos", productoRoutes); // Ejemplo adicional
 

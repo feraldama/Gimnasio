@@ -130,6 +130,18 @@ export const getReservasPorFecha = async (fecha: string) => {
   }
 };
 
+export const getReservasPorRango = async (desde: string, hasta: string) => {
+  try {
+    const r = await api.get("/cancha-reservas/by-rango", {
+      params: { desde, hasta },
+    });
+    return r.data as { data: CanchaReserva[] };
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al obtener reservas" };
+  }
+};
+
 export const createReserva = async (data: Partial<CanchaReserva>) => {
   try {
     const r = await api.post("/cancha-reservas", data);
@@ -160,5 +172,85 @@ export const deleteReserva = async (id: number) => {
   } catch (e) {
     const ax = e as AxiosError<{ message?: string }>;
     throw ax.response?.data || { message: "Error al eliminar reserva" };
+  }
+};
+
+// ---------- Tarifas por banda ----------
+export interface CanchaTarifa {
+  CanchaTarifaId: number;
+  CanchaId: number;
+  CanchaTarifaNombre: string;
+  CanchaTarifaDiasSemana: string;
+  CanchaTarifaHoraDesde: string;
+  CanchaTarifaHoraHasta: string;
+  CanchaTarifaPrecio: number;
+  CanchaTarifaPrioridad: number;
+  CanchaTarifaActiva: number;
+}
+
+export const getTarifasByCancha = async (
+  canchaId: number
+): Promise<{ data: CanchaTarifa[] }> => {
+  try {
+    const r = await api.get(`/cancha-tarifas/cancha/${canchaId}`);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al obtener tarifas" };
+  }
+};
+
+export const createTarifa = async (data: Partial<CanchaTarifa>) => {
+  try {
+    const r = await api.post("/cancha-tarifas", data);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al crear tarifa" };
+  }
+};
+
+export const updateTarifa = async (
+  id: number,
+  data: Partial<CanchaTarifa>
+) => {
+  try {
+    const r = await api.put(`/cancha-tarifas/${id}`, data);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al actualizar tarifa" };
+  }
+};
+
+export const deleteTarifa = async (id: number) => {
+  try {
+    const r = await api.delete(`/cancha-tarifas/${id}`);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al eliminar tarifa" };
+  }
+};
+
+export interface SugerirMontoResp {
+  monto: number;
+  duracionHoras: number;
+  banda: { CanchaTarifaId: number; nombre: string; precio: number } | null;
+  fuente: "BANDA" | "FLAT_CANCHA" | "SIN_TARIFA";
+}
+
+export const sugerirMontoReserva = async (params: {
+  canchaId: number;
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+}): Promise<SugerirMontoResp> => {
+  try {
+    const r = await api.post("/cancha-tarifas/sugerir-monto", params);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al sugerir monto" };
   }
 };

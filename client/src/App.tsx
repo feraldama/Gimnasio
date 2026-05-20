@@ -40,6 +40,9 @@ import HistorialClientePage from "./pages/suscripciones/HistorialClientePage";
 import AsistenciaPage from "./pages/asistencia/AsistenciaPage";
 import ConfiguracionPage from "./pages/configuracion/ConfiguracionPage";
 import CanchaPage from "./pages/cancha/CanchaPage";
+import CanchasAdminPage from "./pages/cancha/CanchasAdminPage";
+import CanchaCalendarioPage from "./pages/cancha/CanchaCalendarioPage";
+import CanchaTarifasPage from "./pages/cancha/CanchaTarifasPage";
 import ReportesGraficosPage from "./pages/dashboard/ReportesGraficosPage";
 import FichaAlumnoPage from "./pages/customers/FichaAlumnoPage";
 import KioskoAsistenciaPage from "./pages/asistencia/KioskoAsistenciaPage";
@@ -132,6 +135,12 @@ function App() {
             <Route path="/asistencia" element={<AsistenciaPage />} />
             <Route path="/configuracion" element={<ConfiguracionPage />} />
             <Route path="/cancha" element={<CanchaPage />} />
+            <Route path="/canchas" element={<CanchasAdminPage />} />
+            <Route
+              path="/cancha/calendario"
+              element={<CanchaCalendarioPage />}
+            />
+            <Route path="/cancha/tarifas" element={<CanchaTarifasPage />} />
             <Route
               path="/reportes-graficos"
               element={<ReportesGraficosPage />}

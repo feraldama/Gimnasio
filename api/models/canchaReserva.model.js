@@ -46,6 +46,27 @@ const CanchaReserva = {
     });
   },
 
+  // Devuelve todas las reservas en un rango [desde, hasta] (inclusivo).
+  // Usado por la vista mensual del calendario para bucketing por día.
+  getByRango: (desdeISO, hastaISO) => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT r.*, ca.CanchaNombre, cl.ClienteNombre, cl.ClienteApellido,
+               cl.ClienteTelefono
+        FROM cancha_reserva r
+        LEFT JOIN cancha ca ON r.CanchaId = ca.CanchaId
+        LEFT JOIN clientes cl ON r.ClienteId = cl.ClienteId
+        WHERE r.CanchaReservaFecha >= ?
+          AND r.CanchaReservaFecha <= ?
+        ORDER BY r.CanchaReservaFecha ASC, r.CanchaReservaHoraInicio ASC
+      `;
+      db.query(sql, [desdeISO, hastaISO], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows);
+      });
+    });
+  },
+
   getByFecha: (fechaIso) => {
     return new Promise((resolve, reject) => {
       const sql = `
@@ -122,6 +143,44 @@ const CanchaReserva = {
           );
         }
       );
+    });
+  },
+
+  // Busca una reserva existente que se solape con el rango propuesto en la
+  // misma cancha y misma fecha. Dos rangos [a1,a2] y [b1,b2] se solapan si
+  // a1 < b2 AND a2 > b1. Excluye reservas canceladas ('X') y opcionalmente
+  // la propia reserva al editar (excludeId).
+  // Devuelve la primera reserva conflictiva con datos para mostrar al usuario,
+  // o null si no hay conflicto.
+  verificarConflicto: (data, excludeId = null) => {
+    return new Promise((resolve, reject) => {
+      const params = [
+        data.CanchaId,
+        data.CanchaReservaFecha,
+        data.CanchaReservaHoraFin,
+        data.CanchaReservaHoraInicio,
+      ];
+      let sql = `
+        SELECT r.CanchaReservaId, r.CanchaReservaHoraInicio, r.CanchaReservaHoraFin,
+               r.CanchaReservaCliente, r.CanchaReservaEstado,
+               cl.ClienteNombre, cl.ClienteApellido
+        FROM cancha_reserva r
+        LEFT JOIN clientes cl ON cl.ClienteId = r.ClienteId
+        WHERE r.CanchaId = ?
+          AND r.CanchaReservaFecha = ?
+          AND r.CanchaReservaEstado <> 'X'
+          AND r.CanchaReservaHoraInicio < ?
+          AND r.CanchaReservaHoraFin > ?
+      `;
+      if (excludeId) {
+        sql += " AND r.CanchaReservaId <> ?";
+        params.push(excludeId);
+      }
+      sql += " ORDER BY r.CanchaReservaHoraInicio LIMIT 1";
+      db.query(sql, params, (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows.length ? rows[0] : null);
+      });
     });
   },
 

@@ -98,6 +98,20 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
+    // Si la cancha tiene reservas asociadas, bloqueamos el delete con 409 y
+    // mandamos la cuenta para que el frontend ofrezca desactivar como
+    // alternativa (no perder historial de reservas).
+    const reservasCount = await Cancha.countReservas(req.params.id);
+    if (reservasCount > 0) {
+      return res.status(409).json({
+        success: false,
+        code: "TIENE_RESERVAS",
+        message: `La cancha tiene ${reservasCount} reserva${
+          reservasCount === 1 ? "" : "s"
+        } asociada${reservasCount === 1 ? "" : "s"}. No se puede eliminar.`,
+        reservasCount,
+      });
+    }
     const ok = await Cancha.delete(req.params.id);
     if (!ok) return res.status(404).json({ message: "Cancha no encontrada" });
     res.json({ success: true });

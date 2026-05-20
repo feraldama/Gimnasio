@@ -7,7 +7,19 @@
 const db = require("../config/db");
 const Configuracion = require("../models/configuracion.model");
 const CanchaReserva = require("../models/canchaReserva.model");
+const { CanchaTarifa, siglaDia } = require("../models/canchaTarifa.model");
 const { sendError } = require("../utils/errors");
+
+// Horario operativo de Cancha: configurable via `configuracion`. Defaults
+// pensados como horario tipico de un gym/club paraguayo. Leer las claves
+// vivas en cada request para que un cambio en Ajustes impacte sin reiniciar.
+async function obtenerHorarioOperativo() {
+  const inicio = await Configuracion.getNumero("CANCHA_HORA_INICIO", 6);
+  const fin = await Configuracion.getNumero("CANCHA_HORA_FIN", 23);
+  // Sanity: si configuran mal (fin <= inicio) volvemos al default.
+  if (fin <= inicio) return { inicio: 6, fin: 23, horasPorDia: 17 };
+  return { inicio, fin, horasPorDia: fin - inicio };
+}
 
 function parseAnioMes(req) {
   const anio = parseInt(req.query.anio, 10);
@@ -232,6 +244,319 @@ exports.cantinaDiario = async (req, res) => {
       valorStockActual,
       data,
       totalRecaudado,
+    });
+  } catch (e) {
+    sendError(res, e, 500);
+  }
+};
+
+// ============================================================
+// CANCHA - Heatmap día de semana × hora (horas pico)
+// ============================================================
+// Cuenta reservas activas por (día de semana × hora) para detectar bandas
+// pico. Día 0 = Lunes, 6 = Domingo (matchea con el orden visual del cliente).
+// `horaInicio`/`horaFin` vienen del horario operativo configurado.
+exports.canchaHeatmap = async (req, res) => {
+  try {
+    const { anio, mes, error } = parseAnioMes(req);
+    if (error) return res.status(400).json({ error });
+    const canchaIdFiltro = req.query.canchaId
+      ? parseInt(req.query.canchaId, 10)
+      : null;
+    const horario = await obtenerHorarioOperativo();
+
+    const queryAsync = (sql, params) =>
+      new Promise((resolve, reject) => {
+        db.query(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+      });
+
+    const sqlParams = [anio, mes];
+    let sql = `
+      SELECT r.CanchaReservaFecha,
+             CAST(r.CanchaReservaHoraInicio AS TEXT) AS hora_inicio_txt,
+             CAST(r.CanchaReservaHoraFin AS TEXT) AS hora_fin_txt,
+             r.CanchaReservaEstado,
+             r.CanchaReservaMonto
+      FROM cancha_reserva r
+      WHERE EXTRACT(YEAR FROM r.CanchaReservaFecha)::int = ?
+        AND EXTRACT(MONTH FROM r.CanchaReservaFecha)::int = ?
+        AND r.CanchaReservaEstado <> 'X'
+    `;
+    if (canchaIdFiltro) {
+      sql += " AND r.CanchaId = ?";
+      sqlParams.push(canchaIdFiltro);
+    }
+    const rows = await queryAsync(sql, sqlParams);
+
+    // Matriz 7 (días) × N (horas). Usamos día 0=Lun para alinear con UI.
+    const horas = [];
+    for (let h = horario.inicio; h < horario.fin; h++) horas.push(h);
+    // celdas: Map "dia-hora" → { reservas, ingreso }
+    const celdas = new Map();
+    let totalReservas = 0;
+    let totalIngreso = 0;
+
+    for (const r of rows) {
+      const fechaStr = String(r.CanchaReservaFecha).split("T")[0];
+      const [yy, mm, dd] = fechaStr.split("-").map(Number);
+      const dt = new Date(yy, mm - 1, dd);
+      // 0=Dom..6=Sab → mapeamos a 0=Lun..6=Dom
+      const diaJS = dt.getDay();
+      const dia = diaJS === 0 ? 6 : diaJS - 1;
+      const hi = String(r.hora_inicio_txt || "").slice(11, 13);
+      const hora = parseInt(hi, 10);
+      if (!Number.isFinite(hora)) continue;
+      // Solo contamos si entra en el horario operativo
+      if (hora < horario.inicio || hora >= horario.fin) continue;
+      const k = `${dia}-${hora}`;
+      if (!celdas.has(k)) celdas.set(k, { reservas: 0, ingreso: 0 });
+      const c = celdas.get(k);
+      c.reservas += 1;
+      c.ingreso += Number(r.CanchaReservaMonto || 0);
+      totalReservas++;
+      totalIngreso += Number(r.CanchaReservaMonto || 0);
+    }
+
+    // Construir matriz completa
+    const matriz = [];
+    for (let dia = 0; dia < 7; dia++) {
+      for (const hora of horas) {
+        const c = celdas.get(`${dia}-${hora}`) || { reservas: 0, ingreso: 0 };
+        matriz.push({ dia, hora, reservas: c.reservas, ingreso: c.ingreso });
+      }
+    }
+
+    // Top 5 horas pico
+    const top = matriz
+      .filter((c) => c.reservas > 0)
+      .sort((a, b) => b.reservas - a.reservas)
+      .slice(0, 5);
+
+    // Total por día (para mostrar día más activo)
+    const porDia = Array.from({ length: 7 }, (_, d) => {
+      const reservas = matriz
+        .filter((c) => c.dia === d)
+        .reduce((a, c) => a + c.reservas, 0);
+      const ingreso = matriz
+        .filter((c) => c.dia === d)
+        .reduce((a, c) => a + c.ingreso, 0);
+      return { dia: d, reservas, ingreso };
+    });
+
+    res.json({
+      anio,
+      mes,
+      horario,
+      horas,
+      matriz,
+      top,
+      porDia,
+      totales: { reservas: totalReservas, ingreso: totalIngreso },
+    });
+  } catch (e) {
+    sendError(res, e, 500);
+  }
+};
+
+// ============================================================
+// CANCHA - Desglose mensual (por cancha + por banda + ocupación)
+// ============================================================
+// Para cada reserva PAGADA del mes determinamos la banda de tarifa que se
+// le habría aplicado (matcheo por día de semana + hora de inicio) y
+// agrupamos. La banda se evalúa para fines de reporte aunque la reserva
+// pueda haberse cobrado con un monto manual.
+exports.canchaDesglose = async (req, res) => {
+  try {
+    const { anio, mes, error } = parseAnioMes(req);
+    if (error) return res.status(400).json({ error });
+    // Filtro opcional: cuando llega ?canchaId=N restringimos canchas y reservas
+    // a esa sola. Sirve para drillear el reporte por cancha individual.
+    const canchaIdFiltro = req.query.canchaId
+      ? parseInt(req.query.canchaId, 10)
+      : null;
+
+    const queryAsync = (sql, params) =>
+      new Promise((resolve, reject) => {
+        db.query(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+      });
+
+    // Canchas (todas o solo la filtrada).
+    const canchas = canchaIdFiltro
+      ? await queryAsync(
+          "SELECT CanchaId, CanchaNombre, CanchaActiva FROM cancha WHERE CanchaId = ? ORDER BY CanchaId",
+          [canchaIdFiltro]
+        )
+      : await queryAsync(
+          "SELECT CanchaId, CanchaNombre, CanchaActiva FROM cancha ORDER BY CanchaId",
+          []
+        );
+
+    // Reservas del mes (opcionalmente filtradas por cancha).
+    const reservasParams = [anio, mes];
+    let sqlReservas = `
+      SELECT r.CanchaReservaId,
+             r.CanchaId,
+             r.CanchaReservaEstado,
+             r.CanchaReservaMonto,
+             r.CanchaReservaFecha,
+             CAST(r.CanchaReservaHoraInicio AS TEXT) AS hora_inicio_txt,
+             CAST(r.CanchaReservaHoraFin AS TEXT) AS hora_fin_txt
+      FROM cancha_reserva r
+      WHERE EXTRACT(YEAR FROM r.CanchaReservaFecha)::int = ?
+        AND EXTRACT(MONTH FROM r.CanchaReservaFecha)::int = ?
+    `;
+    if (canchaIdFiltro) {
+      sqlReservas += " AND r.CanchaId = ?";
+      reservasParams.push(canchaIdFiltro);
+    }
+    sqlReservas += " ORDER BY r.CanchaReservaFecha, r.CanchaReservaHoraInicio";
+    const reservas = await queryAsync(sqlReservas, reservasParams);
+
+    // Cache de tarifas por cancha (las traemos una vez).
+    const tarifasPorCancha = new Map();
+    for (const c of canchas) {
+      const ts = await CanchaTarifa.getByCancha(c.CanchaId);
+      tarifasPorCancha.set(c.CanchaId, ts.filter((t) => t.CanchaTarifaActiva === 1));
+    }
+
+    // Helper: dada una reserva, devuelve la banda aplicable (la de mayor
+    // prioridad cuyo día + hora inicio matchee). Si ninguna matchea
+    // devuelve null (fallback: "Sin banda" en el desglose).
+    function bandaParaReserva(r) {
+      const tarifas = tarifasPorCancha.get(r.CanchaId) || [];
+      if (!tarifas.length) return null;
+      const fechaStr = String(r.CanchaReservaFecha).split("T")[0];
+      const [y, m, d] = fechaStr.split("-").map(Number);
+      const dia = siglaDia(new Date(y, m - 1, d));
+      const hi = (r.hora_inicio_txt || "").slice(11, 16); // "HH:MM"
+      let mejor = null;
+      for (const t of tarifas) {
+        const desde = String(t.CanchaTarifaHoraDesde).slice(0, 5);
+        const hasta = String(t.CanchaTarifaHoraHasta).slice(0, 5);
+        if (!t.CanchaTarifaDiasSemana.includes(dia)) continue;
+        if (hi < desde || hi >= hasta) continue;
+        if (!mejor || t.CanchaTarifaPrioridad > mejor.CanchaTarifaPrioridad) {
+          mejor = t;
+        }
+      }
+      return mejor;
+    }
+
+    // Helper: duración en horas desde dos strings "YYYY-MM-DD HH:MM:SS".
+    function duracionHoras(hi, hf) {
+      if (!hi || !hf) return 0;
+      const a = hi.slice(11, 16);
+      const b = hf.slice(11, 16);
+      const [ah, am] = a.split(":").map(Number);
+      const [bh, bm] = b.split(":").map(Number);
+      const minutos = bh * 60 + bm - (ah * 60 + am);
+      return minutos > 0 ? minutos / 60 : 0;
+    }
+
+    // Agregaciones.
+    const porCancha = new Map();
+    const porBanda = new Map();
+    let totalIngreso = 0;
+    let totalReservas = 0;
+    let totalHorasOcupadas = 0;
+
+    for (const r of reservas) {
+      if (r.CanchaReservaEstado === "X") continue; // canceladas no cuentan
+      const monto = Number(r.CanchaReservaMonto || 0);
+      const horas = duracionHoras(r.hora_inicio_txt, r.hora_fin_txt);
+
+      // Por cancha
+      if (!porCancha.has(r.CanchaId)) {
+        const cInfo = canchas.find((c) => c.CanchaId === r.CanchaId);
+        porCancha.set(r.CanchaId, {
+          canchaId: r.CanchaId,
+          canchaNombre: cInfo?.CanchaNombre || `Cancha ${r.CanchaId}`,
+          ingreso: 0,
+          reservas: 0,
+          horasOcupadas: 0,
+        });
+      }
+      const agg = porCancha.get(r.CanchaId);
+      agg.ingreso += monto;
+      agg.reservas += 1;
+      agg.horasOcupadas += horas;
+
+      // Por banda
+      const banda = bandaParaReserva(r);
+      const key = banda ? `B${banda.CanchaTarifaId}` : "SIN_BANDA";
+      if (!porBanda.has(key)) {
+        porBanda.set(key, {
+          bandaId: banda?.CanchaTarifaId ?? null,
+          nombre:
+            banda?.CanchaTarifaNombre ||
+            (banda ? `Banda ${banda.CanchaTarifaId}` : "Sin banda definida"),
+          ingreso: 0,
+          reservas: 0,
+        });
+      }
+      const aggB = porBanda.get(key);
+      aggB.ingreso += monto;
+      aggB.reservas += 1;
+
+      totalIngreso += monto;
+      totalReservas += 1;
+      totalHorasOcupadas += horas;
+    }
+
+    // Ocupación por cancha: horas reservadas / (horas operativas × días del mes)
+    const horario = await obtenerHorarioOperativo();
+    const dias = diasEnMes(anio, mes);
+    const horasDisponiblesPorCancha = horario.horasPorDia * dias;
+    const porCanchaArr = canchas.map((c) => {
+      const agg = porCancha.get(c.CanchaId) || {
+        canchaId: c.CanchaId,
+        canchaNombre: c.CanchaNombre,
+        ingreso: 0,
+        reservas: 0,
+        horasOcupadas: 0,
+      };
+      const ocupacionPct =
+        horasDisponiblesPorCancha > 0
+          ? Number(
+              ((agg.horasOcupadas / horasDisponiblesPorCancha) * 100).toFixed(2)
+            )
+          : 0;
+      return {
+        ...agg,
+        horasOcupadas: Number(agg.horasOcupadas.toFixed(2)),
+        horasDisponibles: horasDisponiblesPorCancha,
+        ocupacionPct,
+      };
+    });
+
+    const porBandaArr = Array.from(porBanda.values())
+      .map((b) => ({
+        ...b,
+        ingreso: Number(b.ingreso),
+      }))
+      .sort((a, b) => b.ingreso - a.ingreso);
+
+    const totalHorasDisponibles = horasDisponiblesPorCancha * canchas.length;
+    const ocupacionTotalPct =
+      totalHorasDisponibles > 0
+        ? Number(
+            ((totalHorasOcupadas / totalHorasDisponibles) * 100).toFixed(2)
+          )
+        : 0;
+
+    res.json({
+      anio,
+      mes,
+      horario,
+      totales: {
+        ingreso: totalIngreso,
+        reservas: totalReservas,
+        horasOcupadas: Number(totalHorasOcupadas.toFixed(2)),
+        horasDisponibles: totalHorasDisponibles,
+        ocupacionPct: ocupacionTotalPct,
+      },
+      porCancha: porCanchaArr,
+      porBanda: porBandaArr,
     });
   } catch (e) {
     sendError(res, e, 500);

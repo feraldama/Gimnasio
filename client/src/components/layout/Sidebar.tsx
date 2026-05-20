@@ -71,7 +71,12 @@ const navigation: NavigationItem[] = [
     name: "Cancha",
     href: "/cancha",
     icon: <RectangleGroupIcon className="h-7 w-6" />,
-    children: [{ name: "Reservas", href: "/cancha" }],
+    children: [
+      { name: "Calendario", href: "/cancha/calendario" },
+      { name: "Reservas", href: "/cancha" },
+      { name: "Catálogo", href: "/canchas" },
+      { name: "Tarifas", href: "/cancha/tarifas" },
+    ],
   },
   {
     name: "Cantina",
@@ -141,19 +146,28 @@ interface NavItemProps {
   onNavigate?: () => void;
 }
 
+// Recorre el árbol y devuelve todos los hrefs de descendientes leaf.
+function descendantHrefs(item: NavigationChild): string[] {
+  if (!item.children || item.children.length === 0) return [item.href];
+  return item.children.flatMap((c) => descendantHrefs(c));
+}
+
 function NavItem({ item, level = 0, onNavigate }: NavItemProps) {
   const location = useLocation();
   const isActive = location.pathname === item.href;
+  // Para items con hijos: el grupo se abre si la ruta actual coincide con
+  // cualquiera de sus descendientes leaf. El highlight visual del padre se
+  // omite (el hijo activo ya lo marca y el grupo expandido indica el contexto).
+  const grupoTieneActivo =
+    item.children && descendantHrefs(item).includes(location.pathname);
 
   if (item.children) {
     return (
-      <Disclosure as="div" defaultOpen={isActive}>
+      <Disclosure as="div" defaultOpen={grupoTieneActivo}>
         {({ open }) => (
           <>
             <DisclosureButton
-              className={`flex items-center w-full px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md ${
-                isActive ? "bg-gray-700 text-white" : ""
-              }`}
+              className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md cursor-pointer"
               style={{ paddingLeft: `${level * 12 + 12}px` }}
             >
               {level === 0 && <span className="mr-3 text-lg">{item.icon}</span>}

@@ -93,6 +93,14 @@ module.exports = {
   "canchareservaestado": "CanchaReservaEstado",
   "canchareservaobservacion": "CanchaReservaObservacion",
   "canchareservacreadoen": "CanchaReservaCreadoEn",
+  "canchatarifaid": "CanchaTarifaId",
+  "canchatarifanombre": "CanchaTarifaNombre",
+  "canchatarifadiassemana": "CanchaTarifaDiasSemana",
+  "canchatarifahoradesde": "CanchaTarifaHoraDesde",
+  "canchatarifahorahasta": "CanchaTarifaHoraHasta",
+  "canchatarifaprecio": "CanchaTarifaPrecio",
+  "canchatarifaprioridad": "CanchaTarifaPrioridad",
+  "canchatarifaactiva": "CanchaTarifaActiva",
   "productocodigo": "ProductoCodigo",
   "productonombre": "ProductoNombre",
   "productoprecioventa": "ProductoPrecioVenta",
@@ -196,6 +204,7 @@ module.exports = {
   "ventaproducto": "VentaId",
   "configuracion": "ConfigClave",
   "cancha": "CanchaId",
-  "cancha_reserva": "CanchaReservaId"
+  "cancha_reserva": "CanchaReservaId",
+  "cancha_tarifa": "CanchaTarifaId"
 },
 };
