@@ -61,7 +61,7 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
                       to={item.href}
                       className={classNames(
                         "text-gray-300 hover:bg-gray-700 hover:text-white",
-                        "rounded-md px-3 py-2 text-sm font-medium"
+                        "rounded-md px-3 py-2 text-sm font-medium",
                       )}
                     >
                       {item.name}
@@ -96,7 +96,7 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
                         href="/profile"
                         className={classNames(
                           focus ? "bg-gray-100" : "",
-                          "block px-4 py-2 text-sm text-gray-700"
+                          "block px-4 py-2 text-sm text-gray-700",
                         )}
                       >
                         Tu Perfil
@@ -109,7 +109,7 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
                         href="/configuraciones"
                         className={classNames(
                           focus ? "bg-gray-100" : "",
-                          "block px-4 py-2 text-sm text-gray-700"
+                          "block px-4 py-2 text-sm text-gray-700",
                         )}
                       >
                         Configuración
@@ -122,7 +122,7 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
                         onClick={handleLogout}
                         className={classNames(
                           focus ? "bg-gray-100" : "",
-                          "block w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer"
+                          "block w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer",
                         )}
                       >
                         Cerrar sesión

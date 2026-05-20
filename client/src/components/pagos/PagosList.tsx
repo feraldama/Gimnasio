@@ -3,7 +3,7 @@ import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, formatDateLocal } from "../../utils/utils";
 import { getPagoTipoLabel } from "../../constants/pagoTipos";
 import CrearPagoModal from "./CrearPagoModal";
 
@@ -64,11 +64,7 @@ export default function PagosList({
   sortOrder,
   onSort,
 }: PagosListProps) {
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("es-ES");
-  };
+  const formatDate = (dateString: string) => formatDateLocal(dateString);
 
   const columns = [
     { key: "PagoId", label: "ID" },

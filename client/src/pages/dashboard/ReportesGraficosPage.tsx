@@ -132,19 +132,19 @@ export default function ReportesGraficosPage() {
   );
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Reportes Gráficos</h1>
           <p className="text-sm text-gray-500">
             Ocupación del gimnasio, ingresos de cancha y rotación de cantina.
           </p>
         </div>
-        <div className="flex items-end gap-3">
-          <div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 sm:flex-none min-w-[120px]">
             <label className="block text-xs text-gray-500 mb-1">Año</label>
             <select
-              className="px-3 py-2 border border-gray-300 rounded-md"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer"
               value={anio}
               onChange={(e) => setAnio(Number(e.target.value))}
             >
@@ -155,10 +155,10 @@ export default function ReportesGraficosPage() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="flex-1 sm:flex-none min-w-[140px]">
             <label className="block text-xs text-gray-500 mb-1">Mes</label>
             <select
-              className="px-3 py-2 border border-gray-300 rounded-md"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer"
               value={mes}
               onChange={(e) => setMes(Number(e.target.value))}
             >

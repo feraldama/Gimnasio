@@ -86,6 +86,13 @@ function translate(sql) {
       const alreadyCast = /^CAST\s*\(/i.test(lhs);
       return `${alreadyCast ? lhs : `CAST(${lhs} AS TEXT)`} ILIKE`;
     });
+    // Catch-all: si quedó algún `LIKE` sin transformar (típico cuando el
+    // CONCAT del LHS contiene strings literales y mapOutsideStrings lo parte,
+    // dejando la pieza con paréntesis intermedios sin matchear el regex de
+    // arriba) lo cambiamos a ILIKE igual. CONCAT/text expressions devuelven
+    // text, así que no necesitan CAST adicional. Esto preserva el contrato
+    // case-insensitive de MySQL.
+    r = r.replace(/\bLIKE\b/gi, "ILIKE");
     // Quote column aliases that start with PascalCase (`AS HasImagen` ->
     // `AS "HasImagen"`) so PG preserves the original casing in the result
     // fields. Without this, an alias like `HasImagen` comes back as

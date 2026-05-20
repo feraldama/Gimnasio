@@ -1,5 +1,12 @@
 const CanchaReserva = require("../models/canchaReserva.model");
+const db = require("../config/db");
 const { sendError } = require("../utils/errors");
+const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
+
+// Métodos que efectivamente ingresan plata al cajón físico — sólo estos
+// suman a Caja.CajaMonto. POS, voucher, transferencia, crédito: se registran
+// en la planilla pero el saldo de caja queda igual (replica venta.controller).
+const METODOS_EFECTIVO = new Set(["CO"]);
 
 exports.getAll = async (req, res) => {
   try {
@@ -187,6 +194,169 @@ exports.update = async (req, res) => {
     res.json({ success: true, data: r });
   } catch (e) {
     sendError(res, e, 500);
+  }
+};
+
+// Cobra una reserva: la pasa a estado 'P' y registra cada método de pago en
+// `registrodiariocaja`. Sólo CO suma al saldo de Caja; PO/VO/TR/CR quedan
+// registrados pero no mueven el cajón físico (mismo criterio que venta.controller).
+// Todo en una transacción: si algo falla, rollback completo.
+exports.cobrar = async (req, res) => {
+  const reservaId = req.params.id;
+  const { pagos, fecha } = req.body || {};
+
+  if (!Array.isArray(pagos) || pagos.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Debe enviar al menos un método de pago en `pagos`.",
+    });
+  }
+  // Validar códigos y montos antes de abrir transacción.
+  for (const p of pagos) {
+    if (!p || !PAGO_TIPOS[p.tipo]) {
+      return res.status(400).json({
+        success: false,
+        message: `Tipo de pago inválido: ${p?.tipo}`,
+      });
+    }
+    const monto = Number(p.monto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Monto inválido para ${p.tipo}: ${p?.monto}`,
+      });
+    }
+  }
+  if (!req.user?.id) {
+    return res.status(401).json({ success: false, message: "Usuario no autenticado" });
+  }
+  const usuarioId = req.user.id;
+  const totalPagado = pagos.reduce((s, p) => s + Math.round(Number(p.monto)), 0);
+
+  const connection = await db.promise().getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Lock + leer estado actual para evitar doble cobro en concurrencia.
+    const [reservas] = await connection.query(
+      "SELECT * FROM cancha_reserva WHERE CanchaReservaId = ?",
+      [reservaId]
+    );
+    if (reservas.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: "Reserva no encontrada" });
+    }
+    const reserva = reservas[0];
+    if (reserva.CanchaReservaEstado === "P") {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        code: "YA_COBRADA",
+        message: "Esta reserva ya está marcada como Pagada.",
+      });
+    }
+    if (reserva.CanchaReservaEstado === "X") {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        code: "CANCELADA",
+        message: "No se puede cobrar una reserva cancelada.",
+      });
+    }
+
+    // Buscar caja abierta del usuario (último apertura sin cierre posterior).
+    const [aperturas] = await connection.query(
+      `SELECT RegistroDiarioCajaId, CajaId FROM registrodiariocaja
+       WHERE UsuarioId = ? AND TipoGastoId = 2 AND TipoGastoGrupoId = 2
+       ORDER BY RegistroDiarioCajaId DESC LIMIT 1`,
+      [usuarioId]
+    );
+    const apertura = aperturas[0];
+    if (!apertura?.CajaId) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        code: "SIN_CAJA",
+        message: "Para cobrar necesitás tener una caja abierta.",
+      });
+    }
+    const [cierres] = await connection.query(
+      `SELECT RegistroDiarioCajaId FROM registrodiariocaja
+       WHERE UsuarioId = ? AND TipoGastoId = 1 AND TipoGastoGrupoId = 2
+       ORDER BY RegistroDiarioCajaId DESC LIMIT 1`,
+      [usuarioId]
+    );
+    const cierreId = cierres[0]?.RegistroDiarioCajaId || 0;
+    if (apertura.RegistroDiarioCajaId <= cierreId) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        code: "SIN_CAJA",
+        message: "Tu última caja ya fue cerrada. Abrí una nueva antes de cobrar.",
+      });
+    }
+    const cajaId = apertura.CajaId;
+    const fechaMov = fecha || new Date();
+
+    // Pasar reserva a Pagada + guardar el monto cobrado (puede diferir del
+    // monto sugerido por descuentos o vueltos).
+    await connection.query(
+      `UPDATE cancha_reserva
+       SET CanchaReservaEstado = 'P', CanchaReservaMonto = ?
+       WHERE CanchaReservaId = ?`,
+      [totalPagado, reservaId]
+    );
+
+    // Identificación legible de la reserva en el detalle del movimiento.
+    const clienteLabel =
+      [reserva.ClienteNombre, reserva.ClienteApellido].filter(Boolean).join(" ").trim() ||
+      reserva.CanchaReservaCliente ||
+      `Reserva #${reservaId}`;
+
+    let efectivoTotal = 0;
+    for (const p of pagos) {
+      const monto = Math.round(Number(p.monto));
+      const tipo = p.tipo;
+      const grupo = getTipoGastoGrupoId(tipo);
+      const detalle = `Cobro reserva cancha #${reservaId} - ${clienteLabel} - ${getLabel(tipo)}`;
+      await connection.query(
+        `INSERT INTO registrodiariocaja
+         (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+          RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
+         VALUES (?, ?, 2, ?, ?, ?, ?)`,
+        [cajaId, fechaMov, grupo, detalle, monto, usuarioId]
+      );
+      if (METODOS_EFECTIVO.has(tipo)) efectivoTotal += monto;
+    }
+
+    if (efectivoTotal > 0) {
+      await connection.query(
+        "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
+        [efectivoTotal, cajaId]
+      );
+    }
+
+    await connection.commit();
+    const r = await CanchaReserva.getById(reservaId);
+    res.json({
+      success: true,
+      data: r,
+      cobro: {
+        totalPagado,
+        efectivoSumadoACaja: efectivoTotal,
+        cajaId,
+      },
+    });
+  } catch (e) {
+    try {
+      await connection.rollback();
+    } catch (_) {
+      /* rollback puede fallar si la conexión ya está rota; lo ignoramos */
+    }
+    console.error("Error al cobrar reserva:", e);
+    sendError(res, e, 500);
+  } finally {
+    connection.release();
   }
 };
 

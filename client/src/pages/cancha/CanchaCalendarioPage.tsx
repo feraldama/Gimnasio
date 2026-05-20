@@ -511,7 +511,7 @@ export default function CanchaCalendarioPage() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Card>
         <CardHeader
           title="Cancha — Calendario"

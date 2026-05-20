@@ -78,6 +78,21 @@ export const formatDateLocal = (dateString: string): string => {
   return `${d}/${m}/${y}`;
 };
 
+// Fecha + hora en formato local `dd/mm/aaaa HH:mm`.
+// Para columnas TIMESTAMP usar `new Date(s).getHours()` (zona local), no
+// regex sobre el ISO (saldría UTC y se corre 3h en GMT-3).
+export const formatDateTimeLocal = (dateString: string): string => {
+  if (!dateString) return "";
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return formatDateLocal(dateString);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+};
+
 // Interfaz para los items del carrito
 export interface CarritoItem {
   nombre: string;

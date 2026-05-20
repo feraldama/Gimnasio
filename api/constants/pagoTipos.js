@@ -3,7 +3,9 @@
 // reemplazada por una consulta a tipogastogrupo cacheada.
 const PAGO_TIPOS = {
   CO: { codigo: "CO", label: "Contado", tipoGastoGrupoId: 1 },
+  CR: { codigo: "CR", label: "Crédito", tipoGastoGrupoId: 3 },
   PO: { codigo: "PO", label: "POS", tipoGastoGrupoId: 4 },
+  VO: { codigo: "VO", label: "Voucher", tipoGastoGrupoId: 5 },
   TR: { codigo: "TR", label: "Transferencia", tipoGastoGrupoId: 6 },
 };
 

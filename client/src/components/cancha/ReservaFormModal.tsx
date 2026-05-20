@@ -10,9 +10,11 @@ import {
   type SugerirMontoResp,
 } from "../../services/cancha.service";
 import { Button, Badge } from "../common/ui";
+import { BanknotesIcon } from "@heroicons/react/24/outline";
 import { formatMiles, todayLocalISO } from "../../utils/utils";
 import ClienteModal from "../common/ClienteModal";
 import type { Cliente as ClienteFull } from "../common/ClienteFormModal";
+import CobrarReservaModal from "./CobrarReservaModal";
 
 // Usamos el tipo Cliente completo del design system para poder pasar la lista
 // directo al ClienteModal de búsqueda (tabla con filtros). El backend devuelve
@@ -160,6 +162,7 @@ export default function ReservaFormModal({
   const [sugerencia, setSugerencia] = useState<SugerirMontoResp | null>(null);
   const [montoTocadoManual, setMontoTocadoManual] = useState(false);
   const [showClienteModal, setShowClienteModal] = useState(false);
+  const [showCobrarModal, setShowCobrarModal] = useState(false);
 
   // Resetear el estado cada vez que se abre con un nuevo `initial`.
   useEffect(() => {
@@ -486,16 +489,29 @@ export default function ReservaFormModal({
               Monto (Gs.)
             </label>
             <input
-              type="number"
-              min={0}
+              type="text"
+              inputMode="numeric"
               className="w-full px-3 py-2 border border-gray-300 rounded-md tabular-nums"
-              value={form.CanchaReservaMonto}
+              value={
+                form.CanchaReservaMonto
+                  ? formatMiles(form.CanchaReservaMonto)
+                  : ""
+              }
+              placeholder="0"
               onChange={(e) => {
-                setMontoTocadoManual(true);
-                setForm({
-                  ...form,
-                  CanchaReservaMonto: Number(e.target.value) || 0,
-                });
+                const raw = e.target.value
+                  .replace(/\./g, "")
+                  .replace(/\s/g, "");
+                if (raw === "") {
+                  setMontoTocadoManual(true);
+                  setForm({ ...form, CanchaReservaMonto: 0 });
+                  return;
+                }
+                const num = Number(raw);
+                if (!isNaN(num)) {
+                  setMontoTocadoManual(true);
+                  setForm({ ...form, CanchaReservaMonto: num });
+                }
               }}
             />
             {sugerencia && (
@@ -601,6 +617,24 @@ export default function ReservaFormModal({
           </div>
         )}
 
+        {esEdicion && form.CanchaReservaEstado === "R" && puedeEditar && (
+          <div className="mt-4 flex items-center justify-between gap-3 p-3 bg-green-50 border border-green-200 rounded-md">
+            <div className="text-sm text-green-900">
+              <strong>Cobrar reserva:</strong> registra el ingreso en la caja
+              abierta y marca esta reserva como Pagada.
+            </div>
+            <Button
+              variant="success"
+              onClick={() => setShowCobrarModal(true)}
+              disabled={saving}
+              className="cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <BanknotesIcon className="w-4 h-4" />
+              Cobrar
+            </Button>
+          </div>
+        )}
+
         <div className="flex justify-between items-center gap-2 mt-6">
           <div>
             {esEdicion && puedeEliminar && (
@@ -634,6 +668,33 @@ export default function ReservaFormModal({
           </div>
         </div>
       </div>
+
+      <CobrarReservaModal
+        open={showCobrarModal}
+        reserva={
+          esEdicion
+            ? ({
+                CanchaReservaId: form.CanchaReservaId,
+                CanchaId: form.CanchaId,
+                ClienteId: form.ClienteId,
+                CanchaReservaCliente: form.CanchaReservaCliente,
+                CanchaReservaFecha: form.CanchaReservaFecha,
+                CanchaReservaHoraInicio: form.CanchaReservaHoraInicio,
+                CanchaReservaHoraFin: form.CanchaReservaHoraFin,
+                CanchaReservaMonto: form.CanchaReservaMonto,
+                CanchaReservaEstado: form.CanchaReservaEstado,
+                CanchaReservaObservacion: form.CanchaReservaObservacion,
+                ClienteNombre: clienteVinculado?.ClienteNombre,
+                ClienteApellido: clienteVinculado?.ClienteApellido,
+              } as CanchaReserva)
+            : null
+        }
+        onClose={() => setShowCobrarModal(false)}
+        onCobrado={() => {
+          onSaved();
+          onClose();
+        }}
+      />
 
       {/* Búsqueda de cliente (tabla con filtros). Mismo modal que Suscripciones. */}
       <ClienteModal

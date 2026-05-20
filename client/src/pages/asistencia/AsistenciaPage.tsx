@@ -147,14 +147,14 @@ export default function AsistenciaPage() {
   if (!puedeLeer) return <PermissionDenied resource="la asistencia" />;
 
   return (
-    <div className="container mx-auto px-4">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-medium">Control de asistencia</h1>
+    <div className="container mx-auto px-3 sm:px-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h1 className="text-xl sm:text-2xl font-medium">Control de asistencia</h1>
         {puedeKiosko && (
           <button
             type="button"
             onClick={abrirKiosko}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg px-4 py-2.5 inline-flex items-center gap-2 cursor-pointer"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg px-4 py-2.5 inline-flex items-center justify-center gap-2 cursor-pointer self-start sm:self-auto"
             title="Pantalla de auto-registro para clientes (full-screen)"
           >
             <ComputerDesktopIcon className="w-5 h-5" />
@@ -164,12 +164,12 @@ export default function AsistenciaPage() {
       </div>
 
       {/* Selector de cliente + semáforo */}
-      <div className="bg-white p-4 rounded-lg shadow mb-4">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="bg-white p-3 sm:p-4 rounded-lg shadow mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4">
           <button
             type="button"
             onClick={() => setShowClienteModal(true)}
-            className="bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg px-5 py-2.5 inline-flex items-center gap-2 cursor-pointer"
+            className="bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg px-5 py-2.5 inline-flex items-center justify-center gap-2 cursor-pointer self-start"
           >
             <UserIcon className="w-5 h-5" />
             Buscar cliente
@@ -262,14 +262,18 @@ export default function AsistenciaPage() {
 
       {/* Lista de asistencias del día */}
       <div className="bg-white rounded-lg shadow">
-        <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="px-3 sm:px-4 pt-4 pb-3 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-lg font-medium">Asistencias</h2>
-          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <div className="flex items-center flex-wrap gap-2 sm:gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 sm:px-4 py-2 w-full sm:w-auto">
             <label
               htmlFor="filtro-fecha"
               className="text-sm font-medium text-blue-900 whitespace-nowrap"
             >
-              Mostrando asistencias del:
+              {/* Label corto en mobile para evitar overflow del card */}
+              <span className="sm:hidden">Fecha:</span>
+              <span className="hidden sm:inline">
+                Mostrando asistencias del:
+              </span>
             </label>
             <input
               id="filtro-fecha"
@@ -277,7 +281,7 @@ export default function AsistenciaPage() {
               value={fecha}
               max={todayLocalISO()}
               onChange={(e) => setFecha(e.target.value)}
-              className="bg-white border border-blue-300 text-base font-semibold text-blue-900 rounded-md px-3 py-1.5 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
+              className="flex-1 sm:flex-none bg-white border border-blue-300 text-sm sm:text-base font-semibold text-blue-900 rounded-md px-2 sm:px-3 py-1.5 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
             />
             {fecha !== todayLocalISO() && (
               <button

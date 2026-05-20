@@ -175,6 +175,38 @@ export const deleteReserva = async (id: number) => {
   }
 };
 
+// Códigos alineados con api/constants/pagoTipos.js. El backend valida y rechaza
+// si llega algo distinto, por eso usamos un literal y no string libre.
+export type PagoTipoCodigo = "CO" | "CR" | "PO" | "VO" | "TR";
+
+export interface CobrarReservaPago {
+  tipo: PagoTipoCodigo;
+  monto: number;
+}
+
+export interface CobrarReservaResp {
+  success: true;
+  data: CanchaReserva;
+  cobro: {
+    totalPagado: number;
+    efectivoSumadoACaja: number;
+    cajaId: number;
+  };
+}
+
+export const cobrarReserva = async (
+  id: number,
+  pagos: CobrarReservaPago[]
+): Promise<CobrarReservaResp> => {
+  try {
+    const r = await api.post(`/cancha-reservas/${id}/cobrar`, { pagos });
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string; code?: string }>;
+    throw ax.response?.data || { message: "Error al cobrar la reserva" };
+  }
+};
+
 // ---------- Tarifas por banda ----------
 export interface CanchaTarifa {
   CanchaTarifaId: number;

@@ -22,7 +22,7 @@ import {
   ErrorState,
   PermissionDenied,
 } from "../../components/common/ui";
-import { formatCurrency } from "../../utils/utils";
+import { formatCurrency, formatDateLocal } from "../../utils/utils";
 import Swal from "sweetalert2";
 
 interface Pagination {
@@ -276,12 +276,7 @@ export default function ComprasPage() {
         html: `
           <div class="text-left" style="overflow-x: auto;">
             <p><strong>Proveedor:</strong> ${proveedorInfo}</p>
-            <p><strong>Fecha:</strong> ${(() => {
-              const raw = String(compra.CompraFecha ?? "");
-              const [y, m, d] = raw.slice(0, 10).split("-").map(Number);
-              if (!y || !m || !d) return raw;
-              return new Date(y, m - 1, d).toLocaleDateString("es-ES");
-            })()}</p>
+            <p><strong>Fecha:</strong> ${formatDateLocal(String(compra.CompraFecha ?? ""))}</p>
             <p><strong>Tipo:</strong> ${getTipoCompraText(
               compra.CompraTipo
             )}</p>

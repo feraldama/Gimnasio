@@ -139,7 +139,6 @@ const navigation: NavigationItem[] = [
   },
 ];
 
-
 interface NavItemProps {
   item: NavigationItem;
   level?: number;
@@ -200,11 +199,20 @@ function NavItem({ item, level = 0, onNavigate }: NavItemProps) {
     <Link
       to={item.href}
       onClick={onNavigate}
-      className={`flex items-center px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md ${
-        isActive ? "bg-gray-700 text-white" : ""
+      className={`relative flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
+        isActive
+          ? "bg-gray-700/60 text-white"
+          : "text-gray-300 hover:bg-gray-700 hover:text-white"
       }`}
       style={{ paddingLeft: `${level * 12 + (level === 0 ? 12 : 24)}px` }}
     >
+      {/* Barrita lateral naranja para señalar el item activo (acento de marca). */}
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-orange-500"
+        />
+      )}
       {level === 0 && <span className="mr-3 text-lg">{item.icon}</span>}
       {item.name}
     </Link>
@@ -235,10 +243,20 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
         >
           <div className="flex h-full flex-col bg-gray-800">
             <div className="flex h-16 shrink-0 items-center justify-between px-4 bg-gray-900">
-              <span className="text-white font-bold">SALVATORE</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-white font-bold tracking-wide text-sm"
+                  style={{
+                    fontFamily: "'Barlow Condensed', 'Inter', sans-serif",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  GIMNASIO <span className="text-orange-400">&</span> CANCHA
+                </span>
+              </div>
               <button
                 type="button"
-                className="rounded-md text-gray-300 hover:text-white focus:outline-none"
+                className="rounded-md text-gray-300 hover:text-white focus:outline-none cursor-pointer"
                 onClick={() => setMobileOpen(false)}
               >
                 <XMarkIcon className="h-6 w-6" />

@@ -180,7 +180,7 @@ export default function FichaAlumnoPage() {
   ];
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 sm:p-6 space-y-4">
       <div>
         <Link to="/customers" className="text-sm text-blue-600 hover:underline">
           ← Volver a clientes

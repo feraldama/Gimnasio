@@ -4,7 +4,7 @@ import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
 import { PlusIcon, FunnelIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import type { RegistroFilters } from "../../services/registros.service";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, formatDateTimeLocal } from "../../utils/utils";
 
 interface Movimiento {
   id: string | number;
@@ -128,16 +128,7 @@ export default function MovementsList({
     setMontoMaxLocal(activeFilters.montoMax?.toString() || "");
   }, [activeFilters.montoMax]);
   // Formatear fecha
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("es-ES", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = (dateString: string) => formatDateTimeLocal(dateString);
 
   // Formatear monto
   const formatAmount = (amount: number) => {

@@ -5,7 +5,7 @@ import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import Swal from "sweetalert2";
 import { getAllClientesSinPaginacion } from "../../services/clientes.service";
-import { formatCurrency, formatMiles } from "../../utils/utils";
+import { formatCurrency, formatMiles, formatDateLocal } from "../../utils/utils";
 import { getVentasPendientesPorCliente } from "../../services/venta.service";
 import { useAuth } from "../../contexts/useAuth";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
@@ -333,7 +333,7 @@ const CreditoPagosPage = () => {
                     {venta.VentaId}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(venta.VentaFecha).toLocaleDateString()}
+                    {formatDateLocal(venta.VentaFecha)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                     {formatCurrency(venta.Total)}

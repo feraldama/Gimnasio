@@ -103,8 +103,9 @@ export default function CrearPagoModal({
   // Montos por método de pago (solo para creación, cuando no hay currentPago)
   const [contado, setContado] = useState(0);
   const [pos, setPos] = useState(0);
+  const [voucher, setVoucher] = useState(0);
   const [transferencia, setTransferencia] = useState(0);
-  const [pagoTipoActivo, setPagoTipoActivo] = useState<"CO" | "PO" | "TR">(
+  const [pagoTipoActivo, setPagoTipoActivo] = useState<"CO" | "PO" | "VO" | "TR">(
     "CO",
   );
 
@@ -179,6 +180,7 @@ export default function CrearPagoModal({
       });
       setContado(0);
       setPos(0);
+      setVoucher(0);
       setTransferencia(0);
     } else if (initialSuscripcion && modoInicial === "nueva") {
       const hoy = todayLocalISO();
@@ -201,6 +203,7 @@ export default function CrearPagoModal({
       });
       setContado(0);
       setPos(0);
+      setVoucher(0);
       setTransferencia(0);
     } else {
       setFormData({
@@ -224,6 +227,7 @@ export default function CrearPagoModal({
       setFechaError("");
       setContado(0);
       setPos(0);
+      setVoucher(0);
       setTransferencia(0);
     }
   }, [show, currentPago, initialSuscripcion, modoInicial, user]);
@@ -415,7 +419,7 @@ export default function CrearPagoModal({
       return;
     }
 
-    const totalDistribuido = contado + pos + transferencia;
+    const totalDistribuido = contado + pos + voucher + transferencia;
 
     if (currentPago) {
       // Modo edición: un solo pago
@@ -441,7 +445,7 @@ export default function CrearPagoModal({
       Swal.fire({
         icon: "warning",
         title: "Distribución requerida",
-        text: "Debe ingresar al menos un monto en Contado, POS o Transferencia",
+        text: "Debe ingresar al menos un monto en Contado, POS, Voucher o Transferencia",
       });
       return;
     }
@@ -481,6 +485,13 @@ export default function CrearPagoModal({
         ...baseData,
         PagoMonto: pos,
         PagoTipo: "PO",
+      } as Pago);
+    }
+    if (voucher > 0) {
+      pagosToCreate.push({
+        ...baseData,
+        PagoMonto: voucher,
+        PagoTipo: "VO",
       } as Pago);
     }
     if (transferencia > 0) {
@@ -855,6 +866,27 @@ export default function CrearPagoModal({
                     </div>
                     <div className="flex items-center gap-3">
                       <label className="w-28 text-sm text-gray-700">
+                        Voucher:
+                      </label>
+                      <input
+                        type="text"
+                        value={voucher ? formatMiles(voucher) : ""}
+                        onFocus={() => setPagoTipoActivo("VO")}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, "");
+                          const num = Number(raw) || 0;
+                          setVoucher(num);
+                        }}
+                        className={`flex-1 max-w-[140px] p-2 rounded border text-right ${
+                          pagoTipoActivo === "VO"
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-300 bg-white"
+                        }`}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="w-28 text-sm text-gray-700">
                         Transferencia:
                       </label>
                       <input
@@ -877,23 +909,24 @@ export default function CrearPagoModal({
                   </div>
                   <div className="mt-3 flex items-center gap-4">
                     <span className="text-sm text-gray-600">
-                      Suma: Gs. {formatMiles(contado + pos + transferencia)}
+                      Suma: Gs.{" "}
+                      {formatMiles(contado + pos + voucher + transferencia)}
                     </span>
                     <span
                       className={`text-sm font-medium ${
-                        contado + pos + transferencia === formData.PagoMonto &&
-                        formData.PagoMonto > 0
+                        contado + pos + voucher + transferencia ===
+                          formData.PagoMonto && formData.PagoMonto > 0
                           ? "text-green-600"
-                          : contado + pos + transferencia > 0
+                          : contado + pos + voucher + transferencia > 0
                             ? "text-amber-600"
                             : "text-gray-500"
                       }`}
                     >
-                      {contado + pos + transferencia === formData.PagoMonto &&
-                      formData.PagoMonto > 0
+                      {contado + pos + voucher + transferencia ===
+                        formData.PagoMonto && formData.PagoMonto > 0
                         ? "✓ Coincide"
                         : formData.PagoMonto > 0
-                          ? `Restante: Gs. ${formatMiles(Math.max(0, formData.PagoMonto - contado - pos - transferencia))}`
+                          ? `Restante: Gs. ${formatMiles(Math.max(0, formData.PagoMonto - contado - pos - voucher - transferencia))}`
                           : "Ingrese montos"}
                     </span>
                   </div>

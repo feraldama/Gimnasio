@@ -249,7 +249,7 @@ export default function CanchaTarifasPage() {
 
   if (canchas.length === 0) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card>
           <CardHeader title="Tarifas por banda horaria" />
           <div className="text-center text-gray-500 py-6">
@@ -265,7 +265,7 @@ export default function CanchaTarifasPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Card>
         <CardHeader
           title="Tarifas por banda horaria"

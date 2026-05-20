@@ -21,7 +21,7 @@ import {
   Badge,
 } from "../../components/common/ui";
 import Pagination from "../../components/common/Pagination";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, formatDateLocal } from "../../utils/utils";
 import ReservaFormModal, {
   type ReservaFormInitial,
 } from "../../components/cancha/ReservaFormModal";
@@ -170,7 +170,7 @@ export default function CanchaPage() {
   if (!puedeLeer) return <PermissionDenied />;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Card>
         <CardHeader
           title="Cancha — Reservas"
@@ -188,41 +188,45 @@ export default function CanchaPage() {
           }
         />
 
-        <div className="flex gap-2 mb-4">
-          <TextInput
-            placeholder="Buscar por cliente o cancha..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="flex-1">
+            <TextInput
+              placeholder="Buscar por cliente o cancha..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setAppliedSearch(searchTerm);
+                  setPage(1);
+                }
+              }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
                 setAppliedSearch(searchTerm);
                 setPage(1);
-              }
-            }}
-          />
-          <Button
-            variant="outline"
-            onClick={() => {
-              setAppliedSearch(searchTerm);
-              setPage(1);
-            }}
-            className="cursor-pointer"
-          >
-            Buscar
-          </Button>
-          {appliedSearch && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSearchTerm("");
-                setAppliedSearch("");
-                setPage(1);
               }}
-              className="cursor-pointer"
+              className="cursor-pointer flex-1 sm:flex-none"
             >
-              Limpiar
+              Buscar
             </Button>
-          )}
+            {appliedSearch && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearchTerm("");
+                  setAppliedSearch("");
+                  setPage(1);
+                }}
+                className="cursor-pointer flex-1 sm:flex-none"
+              >
+                Limpiar
+              </Button>
+            )}
+          </div>
         </div>
 
         {loading && <LoadingState />}
@@ -249,7 +253,7 @@ export default function CanchaPage() {
                   return (
                     <tr key={r.CanchaReservaId}>
                       <td className="px-3 py-2">
-                        {r.CanchaReservaFecha?.slice(0, 10)}
+                        {formatDateLocal(r.CanchaReservaFecha)}
                       </td>
                       <td className="px-3 py-2">
                         {r.CanchaNombre ||

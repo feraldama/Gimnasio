@@ -9,7 +9,7 @@ import {
 } from "../../services/registrodiariocaja.service";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, todayLocalISO, formatDateLocal } from "../../utils/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { loadPdf } from "../../utils/lazyPdf";
 import { getRegistrosDiariosCaja } from "../../services/registros.service";
@@ -157,7 +157,7 @@ export default function AperturaCierreCajaPage() {
 
     const cajaDescripcion =
       cajas.find((c) => c.CajaId == cajaId)?.CajaDescripcion || "";
-    const fecha = new Date().toLocaleDateString();
+    const fecha = formatDateLocal(todayLocalISO());
     const hora = new Date().toLocaleTimeString();
 
     // --- Nueva lógica: buscar última apertura y cierre del usuario ---

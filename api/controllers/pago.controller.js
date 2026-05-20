@@ -127,7 +127,6 @@ exports.createLote = async (req, res) => {
     }
 
     const pagosCreados = [];
-    let totalMonto = 0;
     for (const p of pagos) {
       const pagoFecha = p.PagoFecha || new Date();
       const [r] = await connection.query(
@@ -142,7 +141,6 @@ exports.createLote = async (req, res) => {
         PagoFecha: pagoFecha,
         PagoUsuarioId: usuarioId,
       });
-      totalMonto += Number(p.PagoMonto);
     }
 
     // Estado de caja del usuario (una sola vez para todo el lote)
@@ -167,6 +165,7 @@ exports.createLote = async (req, res) => {
 
     if (cajaAbierta) {
       // Un movimiento por método (para que el detalle quede legible en el reporte de caja)
+      let totalEfectivo = 0;
       for (const p of pagos) {
         const tipoGastoGrupoId = getTipoGastoGrupoId(p.PagoTipo);
         const detalle = `Pago suscripción #${suscripcionId} - ${getLabel(p.PagoTipo)}`;
@@ -184,12 +183,16 @@ exports.createLote = async (req, res) => {
             usuarioId,
           ]
         );
+        if (p.PagoTipo === "CO") totalEfectivo += Number(p.PagoMonto);
       }
-      // UPDATE atómico con la suma total: una sola contención sobre la fila de caja
-      await connection.query(
-        "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
-        [totalMonto, apertura.CajaId]
-      );
+      // Sólo la porción de efectivo (CO) ingresa al cajón. POS/TR/Voucher
+      // quedan registrados en planilla pero NO suman a Caja.CajaMonto.
+      if (totalEfectivo > 0) {
+        await connection.query(
+          "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
+          [totalEfectivo, apertura.CajaId]
+        );
+      }
     }
 
     await connection.commit();
@@ -325,11 +328,16 @@ exports.create = async (req, res) => {
         ]
       );
 
-      // UPDATE atómico: evita race condition entre pagos concurrentes
-      await connection.query(
-        "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
-        [pagoMonto, apertura.CajaId]
-      );
+      // Sólo el efectivo (CO) ingresa al cajón físico. POS / Transferencia /
+      // Voucher / Crédito quedan registrados en planilla pero NO suman a
+      // Caja.CajaMonto (igual criterio que venta.controller). UPDATE atómico
+      // para evitar race conditions entre pagos concurrentes.
+      if (pagoTipo === "CO") {
+        await connection.query(
+          "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
+          [pagoMonto, apertura.CajaId]
+        );
+      }
     }
 
     await connection.commit();

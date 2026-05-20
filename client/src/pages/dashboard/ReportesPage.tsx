@@ -3,7 +3,7 @@ import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import { loadPdf } from "../../utils/lazyPdf";
 import api from "../../services/api";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, formatDateLocal, todayLocalISO } from "../../utils/utils";
 import { getAllClientesSinPaginacion } from "../../services/clientes.service";
 import {
   getReporteMovimientosProductos,
@@ -722,7 +722,7 @@ const ReportesPage: React.FC = () => {
       y += 7;
       doc.setFontSize(10);
       doc.text(
-        `Generado: ${new Date().toLocaleDateString("es-PY")} — ${enriquecidos.length} producto(s) con stock`,
+        `Generado: ${formatDateLocal(todayLocalISO())} — ${enriquecidos.length} producto(s) con stock`,
         14,
         y,
       );
@@ -1269,7 +1269,7 @@ const ReportesPage: React.FC = () => {
       doc.text(`Suscripciones próximas a vencer (${diasProximas} días)`, 14, 18);
       doc.setFontSize(10);
       doc.text(
-        `Generado: ${new Date().toLocaleDateString("es-PY")} — ${suscripciones.length} suscripcion(es)`,
+        `Generado: ${formatDateLocal(todayLocalISO())} — ${suscripciones.length} suscripcion(es)`,
         14,
         25,
       );

@@ -9,6 +9,7 @@ router.get("/by-fecha", authMiddleware, ctrl.getByFecha);
 router.get("/by-rango", authMiddleware, ctrl.getByRango);
 router.get("/:id", authMiddleware, ctrl.getById);
 router.post("/", authMiddleware, ctrl.create);
+router.post("/:id/cobrar", authMiddleware, ctrl.cobrar);
 router.put("/:id", authMiddleware, ctrl.update);
 router.delete("/:id", authMiddleware, ctrl.remove);
 

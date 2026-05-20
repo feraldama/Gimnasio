@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Swal from "sweetalert2";
 import {
   UserGroupIcon,
   UserPlusIcon,
@@ -11,6 +12,7 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   ClockIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../contexts/useAuth";
 import {
@@ -21,7 +23,12 @@ import {
   TextInput,
 } from "../../components/common/ui";
 import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
-import { formatDateLocal, todayLocalISO } from "../../utils/utils";
+import { createPago, createPagoLote } from "../../services/pagos.service";
+import { usePermiso } from "../../hooks/usePermiso";
+import CrearPagoModal, {
+  type PagoSubmitData,
+} from "../../components/pagos/CrearPagoModal";
+import { addDaysLocal, formatDateLocal, todayLocalISO } from "../../utils/utils";
 
 interface QuickAccessProps {
   icon: ComponentType<{ className?: string }>;
@@ -80,11 +87,16 @@ function QuickAccess({
 interface SuscripcionProximaVencer {
   SuscripcionId: number;
   ClienteId: number;
+  PlanId?: number;
   ClienteNombre?: string;
   ClienteApellido?: string;
   PlanNombre?: string;
+  PlanPrecio?: number;
+  SuscripcionFechaInicio?: string;
   SuscripcionFechaFin: string;
   EstadoPago?: string;
+  // Index signature requerida por CrearPagoModal.Suscripcion.
+  [key: string]: unknown;
 }
 
 const diasHastaVencimiento = (fechaFin: string): number => {
@@ -103,6 +115,19 @@ function ProximasAVencer() {
   const [items, setItems] = useState<SuscripcionProximaVencer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pagoModalOpen, setPagoModalOpen] = useState(false);
+  const [renovarSuscripcion, setRenovarSuscripcion] =
+    useState<SuscripcionProximaVencer | null>(null);
+
+  const puedePagar = usePermiso("PAGOS", "crear");
+
+  const fetchData = () => {
+    setLoading(true);
+    getSuscripcionesProximasAVencer(15, 10)
+      .then((resp) => setItems(resp.data || []))
+      .catch((err) => setError(err?.message || "Error al cargar"))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +145,69 @@ function ProximasAVencer() {
       cancelled = true;
     };
   }, []);
+
+  // Renovación: misma lógica que SuscripcionesPage.handleRenovar. Arma una
+  // nueva suscripción heredando cliente + plan, con fecha inicio = MAX(hoy,
+  // día siguiente al vencimiento anterior), y abre el modal de pago en modo
+  // "nueva" para que se cree pago + suscripción + movimiento de caja en una
+  // sola transacción del backend.
+  const handleRenovar = (s: SuscripcionProximaVencer) => {
+    const hoy = todayLocalISO();
+    const finAnterior = (s.SuscripcionFechaFin || "").split("T")[0];
+    const inicioNueva =
+      finAnterior && finAnterior >= hoy ? addDaysLocal(finAnterior, 1) : hoy;
+    setRenovarSuscripcion({
+      ...s,
+      SuscripcionId: 0, // 0 fuerza creación de nueva suscripción
+      SuscripcionFechaInicio: inicioNueva,
+      SuscripcionFechaFin: "", // backend recalcula con la duración del plan
+    });
+    setPagoModalOpen(true);
+  };
+
+  const handlePagoSubmit = async (pagoData: PagoSubmitData) => {
+    try {
+      const pagos = Array.isArray(pagoData) ? pagoData : [pagoData];
+      if (pagos.length > 1) {
+        const first = pagos[0];
+        const loteData: Record<string, unknown> = {
+          pagos: pagos.map((p) => ({
+            PagoMonto: p.PagoMonto,
+            PagoTipo: p.PagoTipo,
+            PagoFecha: p.PagoFecha,
+          })),
+        };
+        if (first.SuscripcionId) {
+          loteData.SuscripcionId = first.SuscripcionId;
+        } else {
+          loteData.ClienteId = first.ClienteId;
+          loteData.PlanId = first.PlanId;
+          loteData.SuscripcionFechaInicio = first.SuscripcionFechaInicio;
+          loteData.SuscripcionFechaFin = first.SuscripcionFechaFin;
+        }
+        await createPagoLote(loteData);
+      } else {
+        await createPago(pagos[0]);
+      }
+      setPagoModalOpen(false);
+      setRenovarSuscripcion(null);
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: "Renovación cobrada exitosamente",
+        showConfirmButton: false,
+        timer: 2000,
+      });
+      fetchData();
+    } catch (err) {
+      const e = err as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "Error al renovar",
+        text: e?.message || "No se pudo registrar el pago de renovación",
+      });
+    }
+  };
 
   return (
     <Card padding="none">
@@ -162,6 +250,9 @@ function ProximasAVencer() {
                 <th className="px-4 py-2 text-left">Vence</th>
                 <th className="px-4 py-2 text-left">Días</th>
                 <th className="px-4 py-2 text-left">Pago</th>
+                {puedePagar && (
+                  <th className="px-4 py-2 text-right">Acciones</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -205,6 +296,20 @@ function ProximasAVencer() {
                         {s.EstadoPago || "PENDIENTE"}
                       </span>
                     </td>
+                    {puedePagar && (
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        <Button
+                          size="sm"
+                          variant="success"
+                          onClick={() => handleRenovar(s)}
+                          className="cursor-pointer inline-flex items-center gap-1"
+                          title="Renovar y cobrar"
+                        >
+                          <ArrowPathIcon className="w-4 h-4" />
+                          Renovar
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -212,6 +317,16 @@ function ProximasAVencer() {
           </table>
         )}
       </div>
+      <CrearPagoModal
+        show={pagoModalOpen}
+        onClose={() => {
+          setPagoModalOpen(false);
+          setRenovarSuscripcion(null);
+        }}
+        onSubmit={handlePagoSubmit}
+        initialSuscripcion={renovarSuscripcion}
+        modoInicial="nueva"
+      />
     </Card>
   );
 }
@@ -225,7 +340,13 @@ function Dashboard() {
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-text">
+          <h1
+            className="text-3xl font-bold text-text uppercase tracking-wide"
+            style={{
+              fontFamily: "'Barlow Condensed', 'Inter', sans-serif",
+              letterSpacing: "0.02em",
+            }}
+          >
             Panel de Control
           </h1>
           {user && (

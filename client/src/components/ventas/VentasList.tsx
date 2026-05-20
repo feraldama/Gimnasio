@@ -5,7 +5,7 @@ import type {
   VentaCreditoPago,
   VentaFilters,
 } from "../../services/venta.service";
-import { formatCurrency, formatMiles } from "../../utils/utils";
+import { formatCurrency, formatMiles, formatDateTimeLocal } from "../../utils/utils";
 import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
@@ -259,16 +259,7 @@ const VentasList = ({
     {
       key: "VentaFecha",
       label: "Fecha",
-      render: (venta: VentaWithId) => {
-        const fecha = new Date(venta.VentaFecha);
-        return fecha.toLocaleDateString("es-ES", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      },
+      render: (venta: VentaWithId) => formatDateTimeLocal(venta.VentaFecha),
     },
     {
       key: "Cliente",

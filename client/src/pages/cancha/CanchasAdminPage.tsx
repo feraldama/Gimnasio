@@ -183,7 +183,7 @@ export default function CanchasAdminPage() {
   if (!puedeLeer) return <PermissionDenied resource="el catálogo de canchas" />;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Card>
         <CardHeader
           title="Canchas — Catálogo"
