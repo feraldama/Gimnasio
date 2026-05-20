@@ -298,16 +298,23 @@ function ProximasAVencer() {
                     </td>
                     {puedePagar && (
                       <td className="px-4 py-2 text-right whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          variant="success"
-                          onClick={() => handleRenovar(s)}
-                          className="cursor-pointer inline-flex items-center gap-1"
-                          title="Renovar y cobrar"
-                        >
-                          <ArrowPathIcon className="w-4 h-4" />
-                          Renovar
-                        </Button>
+                        {/* Sólo ofrecemos renovar cuando la suscripción está
+                            vencida o a 1 día de vencer. El resto de la lista
+                            sigue ahí para visibilidad pero sin botón (todavía
+                            falta tiempo). El usuario que quiera renovar antes
+                            puede ir directo a /suscripciones. */}
+                        {dias <= 1 && (
+                          <Button
+                            size="sm"
+                            variant="success"
+                            onClick={() => handleRenovar(s)}
+                            className="cursor-pointer inline-flex items-center gap-1"
+                            title="Renovar y cobrar"
+                          >
+                            <ArrowPathIcon className="w-4 h-4" />
+                            Renovar
+                          </Button>
+                        )}
                       </td>
                     )}
                   </tr>

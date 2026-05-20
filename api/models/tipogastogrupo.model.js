@@ -38,20 +38,27 @@ const TipoGastoGrupo = {
 
   create: (data) => {
     return new Promise((resolve, reject) => {
-      // 1. Obtener el contador actual
+      // 1. Calcular el próximo grupoid como MAX(actual) + 1. Antes usábamos
+      //    el contador `TipoGastoCantGastos`, pero si el contador queda
+      //    desincronizado con la realidad (p. ej. seeds que insertan grupos
+      //    sin incrementar el contador), el siguiente create choca contra la
+      //    PK compuesta (tipogastoid, tipogastogrupoid). MAX es la fuente
+      //    autoritativa.
       db.query(
-        "SELECT TipoGastoCantGastos FROM TipoGasto WHERE TipoGastoId = ?",
+        "SELECT COALESCE(MAX(TipoGastoGrupoId), 0) AS maxid FROM tipogastogrupo WHERE TipoGastoId = ?",
         [data.TipoGastoId],
         (err, results) => {
           if (err) return reject(err);
-          const nextGrupoId = (results[0]?.TipoGastoCantGastos || 0) + 1;
+          const nextGrupoId = Number(results[0]?.maxid || 0) + 1;
           // 2. Insertar con el nuevo ID
           db.query(
             "INSERT INTO tipogastogrupo (TipoGastoId, TipoGastoGrupoId, TipoGastoGrupoDescripcion) VALUES (?, ?, ?)",
             [data.TipoGastoId, nextGrupoId, data.TipoGastoGrupoDescripcion],
-            (err, result) => {
+            (err) => {
               if (err) return reject(err);
-              // 3. Actualizar el contador en TipoGasto
+              // 3. Mantener el contador sincronizado para queries que aún lo lean.
+              //    Lo seteamos al máximo (no a `count`) para que coincida con la
+              //    semántica histórica de "último id usado".
               db.query(
                 "UPDATE TipoGasto SET TipoGastoCantGastos = ? WHERE TipoGastoId = ?",
                 [nextGrupoId, data.TipoGastoId],

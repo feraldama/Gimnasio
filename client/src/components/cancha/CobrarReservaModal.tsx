@@ -63,6 +63,10 @@ export default function CobrarReservaModal({
     "—";
   const sugerido = reserva.CanchaReservaMonto || 0;
   const diff = total - sugerido;
+  // Invitado/externo: la reserva guarda sólo un nombre libre, sin vinculo a
+  // tabla `clientes`. No podemos cobrarles a crédito porque no hay forma de
+  // perseguir la deuda después (en /credito-pagos se busca por ClienteId).
+  const esInvitado = !reserva.ClienteId;
 
   const setMonto = (codigo: PagoTipoCodigo, raw: string) => {
     const limpio = raw.replace(/\./g, "").replace(/\s/g, "");
@@ -83,27 +87,69 @@ export default function CobrarReservaModal({
       });
       return;
     }
+    if (esInvitado && (montos.CR || 0) > 0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Crédito no permitido",
+        text:
+          "La reserva es de un invitado/externo sin cliente registrado. " +
+          "Para cobrar a crédito tenés que vincular un cliente desde el form de reserva.",
+      });
+      return;
+    }
     const pagos = METODOS
       .filter((m) => (montos[m.codigo] || 0) > 0)
-      .map((m) => ({ tipo: m.codigo, monto: montos[m.codigo] }));
+      .map((m) => ({ tipo: m.codigo, monto: montos[m.codigo], label: m.label }));
     try {
       setGuardando(true);
-      const r = await cobrarReserva(reserva.CanchaReservaId, pagos);
-      Swal.fire({
+      const r = await cobrarReserva(
+        reserva.CanchaReservaId,
+        pagos.map((p) => ({ tipo: p.tipo, monto: p.monto }))
+      );
+
+      // Desglose por método: ayuda a confirmar visualmente que la
+      // distribución llegó como se esperaba (ej. parte efectivo + parte
+      // transferencia). Se queda abierto hasta que el usuario lo cierre.
+      const filasDesglose = pagos
+        .map(
+          (p) =>
+            `<tr>
+              <td class="py-1 pr-4 text-gray-600">${p.label}</td>
+              <td class="py-1 text-right font-medium tabular-nums">Gs. ${formatMiles(p.monto)}</td>
+            </tr>`
+        )
+        .join("");
+
+      await Swal.fire({
         icon: "success",
         title: "Cobro registrado",
         html: `
           <div class="text-sm text-left">
-            <p>Total cobrado: <strong>Gs. ${formatMiles(r.cobro.totalPagado)}</strong></p>
+            <p class="mb-3"><strong>${clienteLabel}</strong> · Reserva #${reserva.CanchaReservaId}</p>
+            <table class="w-full mb-3 border-t border-b border-gray-200">
+              <thead>
+                <tr class="text-xs uppercase text-gray-500">
+                  <th class="py-1 pr-4 text-left font-medium">Método</th>
+                  <th class="py-1 text-right font-medium">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filasDesglose}
+                <tr class="border-t border-gray-200">
+                  <td class="py-1.5 pr-4 font-semibold">Total</td>
+                  <td class="py-1.5 text-right font-semibold tabular-nums">Gs. ${formatMiles(r.cobro.totalPagado)}</td>
+                </tr>
+              </tbody>
+            </table>
             ${
               r.cobro.efectivoSumadoACaja > 0
-                ? `<p>Efectivo sumado a caja: <strong>Gs. ${formatMiles(r.cobro.efectivoSumadoACaja)}</strong></p>`
-                : "<p class='text-gray-500'>No se sumó efectivo a la caja.</p>"
+                ? `<p class="text-green-700">Efectivo sumado a caja: <strong>Gs. ${formatMiles(r.cobro.efectivoSumadoACaja)}</strong></p>`
+                : "<p class='text-gray-500'>No ingresó efectivo al cajón (no es Contado).</p>"
             }
           </div>
         `,
-        timer: 3000,
-        showConfirmButton: false,
+        confirmButtonText: "Cerrar",
+        confirmButtonColor: "#16a34a",
       });
       onCobrado();
       onClose();
@@ -150,28 +196,50 @@ export default function CobrarReservaModal({
             al efectivo de la caja; el resto queda registrado pero no mueve el cajón.
           </p>
 
+          {esInvitado && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-900">
+              <strong>Reserva de invitado/externo:</strong> no se puede cobrar a
+              <strong> Crédito</strong> porque la deuda no quedaría asociada a
+              ningún cliente registrado. Si necesitás dejar deuda, abrí el form de
+              reserva y vinculá un cliente con el buscador.
+            </div>
+          )}
+
           <div className="space-y-2">
-            {METODOS.map((m) => (
-              <div
-                key={m.codigo}
-                className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-md"
-              >
-                <div className="w-32 sm:w-40">
-                  <div className="text-sm font-medium text-gray-800">{m.label}</div>
-                  <div className="text-[11px] text-gray-500">{m.hint}</div>
+            {METODOS.map((m) => {
+              const bloqueado = m.codigo === "CR" && esInvitado;
+              return (
+                <div
+                  key={m.codigo}
+                  className={`flex items-center gap-3 px-3 py-2 border rounded-md ${
+                    bloqueado
+                      ? "border-gray-200 bg-gray-50 opacity-60"
+                      : "border-gray-200"
+                  }`}
+                  title={bloqueado ? "Deshabilitado: reserva sin cliente vinculado" : ""}
+                >
+                  <div className="w-32 sm:w-40">
+                    <div className="text-sm font-medium text-gray-800">{m.label}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {bloqueado ? "Requiere cliente vinculado" : m.hint}
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={montos[m.codigo] ? formatMiles(montos[m.codigo]) : ""}
+                      onChange={(e) => setMonto(m.codigo, e.target.value)}
+                      disabled={bloqueado}
+                      className={`w-full px-3 py-1.5 border border-gray-300 rounded-md text-right tabular-nums focus:ring-2 focus:ring-green-400 focus:outline-none ${
+                        bloqueado ? "cursor-not-allowed bg-gray-100" : ""
+                      }`}
+                    />
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="0"
-                    value={montos[m.codigo] ? formatMiles(montos[m.codigo]) : ""}
-                    onChange={(e) => setMonto(m.codigo, e.target.value)}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-right tabular-nums focus:ring-2 focus:ring-green-400 focus:outline-none"
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-md border border-gray-200">

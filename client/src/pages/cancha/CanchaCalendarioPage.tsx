@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Swal from "sweetalert2";
-import { PrinterIcon } from "@heroicons/react/24/outline";
+import {
+  PrinterIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from "@heroicons/react/24/outline";
 import {
   getCanchasActivas,
   getReservasPorFecha,
@@ -25,7 +29,7 @@ import {
   ErrorState,
   PermissionDenied,
 } from "../../components/common/ui";
-import { formatMiles, todayLocalISO } from "../../utils/utils";
+import { addDaysLocal, formatMiles, todayLocalISO } from "../../utils/utils";
 import ReservaFormModal, {
   type ReservaFormInitial,
 } from "../../components/cancha/ReservaFormModal";
@@ -558,13 +562,22 @@ export default function CanchaCalendarioPage() {
         />
 
         <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
-          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
             <label
               htmlFor="filtro-fecha-calendario"
               className="text-sm font-medium text-blue-900 whitespace-nowrap"
             >
               Fecha:
             </label>
+            <button
+              type="button"
+              onClick={() => setFecha(addDaysLocal(fecha, -1))}
+              className="flex items-center justify-center w-8 h-8 rounded-md bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
+              title="Día anterior"
+              aria-label="Día anterior"
+            >
+              <ChevronLeftIcon className="w-4 h-4" />
+            </button>
             <input
               id="filtro-fecha-calendario"
               type="date"
@@ -572,11 +585,20 @@ export default function CanchaCalendarioPage() {
               onChange={(e) => setFecha(e.target.value)}
               className="bg-white border border-blue-300 text-base font-semibold text-blue-900 rounded-md px-3 py-1.5 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
             />
+            <button
+              type="button"
+              onClick={() => setFecha(addDaysLocal(fecha, 1))}
+              className="flex items-center justify-center w-8 h-8 rounded-md bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none"
+              title="Día siguiente"
+              aria-label="Día siguiente"
+            >
+              <ChevronRightIcon className="w-4 h-4" />
+            </button>
             {fecha !== todayLocalISO() && (
               <button
                 type="button"
                 onClick={() => setFecha(todayLocalISO())}
-                className="text-xs font-medium text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                className="text-xs font-medium text-blue-700 hover:text-blue-900 underline cursor-pointer ml-1"
               >
                 Ir a hoy
               </button>

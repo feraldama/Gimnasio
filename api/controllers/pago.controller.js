@@ -438,7 +438,12 @@ exports.delete = async (req, res) => {
     }
 
     const tipoGastoGrupoId = getTipoGastoGrupoId(pago.PagoTipo);
-    const detalle = `Anulación pago #${pago.PagoId} suscripción #${pago.SuscripcionId} - ${getLabel(pago.PagoTipo)}`;
+    // `registrodiariocajadetalle` es VARCHAR(50). El formato anterior podía
+    // pasarse cuando IDs y método combinados superaban 50. Acá truncamos
+    // defensivamente y dropeamos el "suscripción #X" porque la relación se
+    // puede recuperar via el PagoId (que sí guardamos).
+    const detalleRaw = `Anul. pago #${pago.PagoId} ${getLabel(pago.PagoTipo)}`;
+    const detalle = detalleRaw.length > 50 ? detalleRaw.slice(0, 50) : detalleRaw;
 
     // TipoGastoId 1 = egreso: contrapartida del ingreso original
     await connection.query(
@@ -448,10 +453,15 @@ exports.delete = async (req, res) => {
       [apertura.CajaId, 1, tipoGastoGrupoId, detalle, pago.PagoMonto, usuarioId]
     );
 
-    await connection.query(
-      "UPDATE Caja SET CajaMonto = CajaMonto - ? WHERE CajaId = ?",
-      [pago.PagoMonto, apertura.CajaId]
-    );
+    // Espejo del fix de pago.create: sólo Contado afecta el cajón físico.
+    // Si el pago original fue POS/Voucher/Transferencia/Crédito, el efectivo
+    // nunca entró a Caja, así que la anulación tampoco lo saca.
+    if (pago.PagoTipo === "CO") {
+      await connection.query(
+        "UPDATE Caja SET CajaMonto = CajaMonto - ? WHERE CajaId = ?",
+        [pago.PagoMonto, apertura.CajaId]
+      );
+    }
 
     await connection.query("DELETE FROM pago WHERE PagoId = ?", [
       req.params.id,

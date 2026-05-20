@@ -521,10 +521,10 @@ export default function CrearPagoModal({
         <div className="relative w-full max-w-2xl max-h-full z-10">
           <form
             onSubmit={handleSubmit}
-            className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+            className="relative bg-white rounded-lg shadow flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between p-4 border-b rounded-t">
+            <div className="flex-shrink-0 flex items-start justify-between p-4 border-b rounded-t bg-white">
               <h3 className="text-xl font-semibold text-gray-900">
                 {currentPago
                   ? `Editar pago: ${currentPago.PagoId}`
@@ -532,7 +532,7 @@ export default function CrearPagoModal({
               </h3>
               <button
                 type="button"
-                className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center"
+                className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center cursor-pointer"
                 onClick={onClose}
               >
                 <svg
@@ -548,7 +548,7 @@ export default function CrearPagoModal({
                 </svg>
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {!currentPago && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">
                   <label className="block mb-3 text-sm font-medium text-gray-900">
@@ -969,7 +969,7 @@ export default function CrearPagoModal({
                 />
               </div>
             </div>
-            <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
+            <div className="flex-shrink-0 flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b bg-white">
               <button
                 type="submit"
                 className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center cursor-pointer"

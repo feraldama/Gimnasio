@@ -1,3 +1,25 @@
+// Formato compacto para ejes de gráficos (ej. "1M", "2,5M", "500K", "15K").
+// Recharts da al YAxis ~60px de ancho por defecto, donde "1.000.000" se corta
+// y se ve "000.000". Acá devolvemos algo de 2-5 chars que siempre entra.
+export const formatMilesCompact = (value: number | string): string => {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n)) return "0";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) {
+    const v = n / 1_000_000;
+    // 1, 2.5, 12 — sin decimales si es entero, 1 decimal si no
+    const s =
+      v % 1 === 0
+        ? String(v)
+        : v.toFixed(1).replace(".", ",").replace(/,0$/, "");
+    return `${s}M`;
+  }
+  if (abs >= 1_000) {
+    return `${Math.round(n / 1_000)}K`;
+  }
+  return String(Math.round(n));
+};
+
 export const formatMiles = (value: number | string): string => {
   const parseToNumber = (value: number | string): number => {
     if (typeof value === "string") {

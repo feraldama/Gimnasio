@@ -1,12 +1,19 @@
 const CanchaReserva = require("../models/canchaReserva.model");
 const db = require("../config/db");
 const { sendError } = require("../utils/errors");
-const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
+const { PAGO_TIPOS, getLabel } = require("../constants/pagoTipos");
 
 // Métodos que efectivamente ingresan plata al cajón físico — sólo estos
 // suman a Caja.CajaMonto. POS, voucher, transferencia, crédito: se registran
 // en la planilla pero el saldo de caja queda igual (replica venta.controller).
 const METODOS_EFECTIVO = new Set(["CO"]);
+
+// Todos los cobros de cancha se categorizan bajo este grupo, independientemente
+// del método de pago. El método queda escrito en el detalle para que los
+// reportes lo filtren por LIKE. Permite la pregunta "¿cuánto cobré por cancha?"
+// con un solo filtro estructural (TipoGastoGrupoId=7), y luego desglosar por
+// método con LIKE 'Contado%', LIKE 'Transferencia%', etc.
+const TIPO_GASTO_GRUPO_COBRO_CANCHA = 7;
 
 exports.getAll = async (req, res) => {
   try {
@@ -238,8 +245,14 @@ exports.cobrar = async (req, res) => {
     await connection.beginTransaction();
 
     // Lock + leer estado actual para evitar doble cobro en concurrencia.
+    // JOIN con clientes para que el detalle del movimiento pueda incluir el
+    // nombre — sin el JOIN, ClienteNombre/Apellido venían undefined y la
+    // descripción quedaba como "Contado  #294" con doble espacio.
     const [reservas] = await connection.query(
-      "SELECT * FROM cancha_reserva WHERE CanchaReservaId = ?",
+      `SELECT r.*, c.ClienteNombre, c.ClienteApellido
+       FROM cancha_reserva r
+       LEFT JOIN clientes c ON c.ClienteId = r.ClienteId
+       WHERE r.CanchaReservaId = ?`,
       [reservaId]
     );
     if (reservas.length === 0) {
@@ -261,6 +274,19 @@ exports.cobrar = async (req, res) => {
         success: false,
         code: "CANCELADA",
         message: "No se puede cobrar una reserva cancelada.",
+      });
+    }
+
+    // Crédito requiere un cliente registrado en BD: la deuda se persigue por
+    // ClienteId en /credito-pagos. Si la reserva es de un invitado/externo
+    // (sólo nombre libre, sin vínculo) rechazamos cualquier monto en CR.
+    if (!reserva.ClienteId && pagos.some((p) => p.tipo === "CR")) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        code: "CR_SIN_CLIENTE",
+        message:
+          "No se puede cobrar a crédito una reserva de invitado/externo. Vinculá un cliente registrado antes de cobrar.",
       });
     }
 
@@ -308,25 +334,51 @@ exports.cobrar = async (req, res) => {
     );
 
     // Identificación legible de la reserva en el detalle del movimiento.
-    const clienteLabel =
+    // La columna `registrodiariocajadetalle` es VARCHAR(50), así que el detalle
+    // debe entrar en 50 chars o el INSERT revienta con 22001. El método va al
+    // principio para que el reporte filtre por LIKE 'Contado%' / 'POS%' /
+    // 'Voucher%' / 'Transferencia%' / 'Crédito%'.
+    const clienteRaw =
       [reserva.ClienteNombre, reserva.ClienteApellido].filter(Boolean).join(" ").trim() ||
       reserva.CanchaReservaCliente ||
-      `Reserva #${reservaId}`;
+      "";
+    const truncar = (s, n) => (s && s.length > n ? s.slice(0, n) : s || "");
 
     let efectivoTotal = 0;
+    let montoCredito = 0;
     for (const p of pagos) {
       const monto = Math.round(Number(p.monto));
       const tipo = p.tipo;
-      const grupo = getTipoGastoGrupoId(tipo);
-      const detalle = `Cobro reserva cancha #${reservaId} - ${clienteLabel} - ${getLabel(tipo)}`;
+      const metodo = getLabel(tipo); // "Contado" | "POS" | "Voucher" | "Transferencia" | "Crédito"
+      // Formato: "<Método> <CLIENTE> #<id>" — cliente se trunca para que el
+      // total no exceda 50 chars.
+      const sufijo = ` #${reservaId}`;
+      const presupuesto = 50 - metodo.length - 1 - sufijo.length; // " " entre método y cliente
+      const cliente = truncar(clienteRaw, Math.max(0, presupuesto));
+      const detalle = truncar(`${metodo} ${cliente}${sufijo}`, 50);
       await connection.query(
         `INSERT INTO registrodiariocaja
          (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
          VALUES (?, ?, 2, ?, ?, ?, ?)`,
-        [cajaId, fechaMov, grupo, detalle, monto, usuarioId]
+        [cajaId, fechaMov, TIPO_GASTO_GRUPO_COBRO_CANCHA, detalle, monto, usuarioId]
       );
       if (METODOS_EFECTIVO.has(tipo)) efectivoTotal += monto;
+      if (tipo === "CR") montoCredito += monto;
+    }
+
+    // Si una parte del cobro fue a crédito, registramos la deuda en
+    // `cancha_credito`. La validación previa ya garantiza que hay ClienteId
+    // (no se permite CR sin cliente vinculado). El saldo inicial = monto
+    // original, y se decrementará a medida que se cobre con /credito-pagos.
+    if (montoCredito > 0) {
+      await connection.query(
+        `INSERT INTO cancha_credito
+         (CanchaReservaId, ClienteId, CanchaCreditoMonto, CanchaCreditoSaldo,
+          CanchaCreditoFecha, CanchaCreditoPagoCant, UsuarioId)
+         VALUES (?, ?, ?, ?, ?, 0, ?)`,
+        [reservaId, reserva.ClienteId, montoCredito, montoCredito, fechaMov, usuarioId]
+      );
     }
 
     if (efectivoTotal > 0) {

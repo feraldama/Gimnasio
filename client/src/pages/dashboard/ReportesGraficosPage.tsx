@@ -37,7 +37,7 @@ import {
   type ReporteCanchaDesgloseResponse,
   type ReporteHeatmapResponse,
 } from "../../services/reportes.service";
-import { formatMiles } from "../../utils/utils";
+import { formatMiles, formatMilesCompact } from "../../utils/utils";
 import {
   getCanchasActivas,
   type Cancha,
@@ -254,7 +254,7 @@ export default function ReportesGraficosPage() {
               <BarChart data={cancha.data}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="dia" />
-                <YAxis tickFormatter={(v) => formatMiles(v as number)} />
+                <YAxis tickFormatter={(v) => formatMilesCompact(v as number)} />
                 <Tooltip
                   formatter={(v) => `Gs. ${formatMiles(Number(v) || 0)}`}
                 />
@@ -349,7 +349,7 @@ export default function ReportesGraficosPage() {
                   <XAxis dataKey="canchaNombre" />
                   <YAxis
                     yAxisId="left"
-                    tickFormatter={(v) => formatMiles(v as number)}
+                    tickFormatter={(v) => formatMilesCompact(v as number)}
                   />
                   <YAxis
                     yAxisId="right"
@@ -703,7 +703,7 @@ export default function ReportesGraficosPage() {
                 <XAxis dataKey="dia" />
                 <YAxis
                   yAxisId="left"
-                  tickFormatter={(v) => formatMiles(v as number)}
+                  tickFormatter={(v) => formatMilesCompact(v as number)}
                 />
                 <YAxis
                   yAxisId="right"

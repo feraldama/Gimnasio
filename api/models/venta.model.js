@@ -36,11 +36,11 @@ function buildVentaFiltersWhere(filters = {}) {
   }
   if (filters.estado === "P") {
     conditions.push(
-      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.TotalPagos, 0)) > 0"
+      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.total_pagos, 0)) > 0"
     );
   } else if (filters.estado === "C") {
     conditions.push(
-      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.TotalPagos, 0)) <= 0)"
+      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.total_pagos, 0)) <= 0)"
     );
   }
 
@@ -248,7 +248,7 @@ const Venta = {
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
           FROM ventacreditopago
           GROUP BY VentaCreditoId
         ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -264,7 +264,7 @@ const Venta = {
           FROM venta v
           LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
           LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
             FROM ventacreditopago
             GROUP BY VentaCreditoId
           ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -351,7 +351,7 @@ const Venta = {
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
           FROM ventacreditopago
           GROUP BY VentaCreditoId
         ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -414,7 +414,7 @@ const Venta = {
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
           LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
           LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
             FROM ventacreditopago
             GROUP BY VentaCreditoId
           ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -502,8 +502,11 @@ const Venta = {
   // Obtener deudas pendientes agrupadas por cliente
   getDeudasPendientesPorCliente: () => {
     return new Promise((resolve, reject) => {
+      // HAVING/ORDER BY no pueden referenciar el alias PascalCase porque el
+      // adapter lo auto-quota (AS "Saldo") y PG lowercasea las referencias
+      // unquoted → "no existe la columna saldo". Repetimos la expresión.
       const query = `
-        SELECT 
+        SELECT
           c.ClienteId,
           CONCAT(TRIM(c.ClienteNombre), ' ', TRIM(c.ClienteApellido)) AS Cliente,
           SUM(v.Total) AS TotalVentas,
@@ -513,8 +516,8 @@ const Venta = {
         JOIN clientes c ON v.ClienteId = c.ClienteId
         WHERE v.VentaTipo = 'CR'
         GROUP BY c.ClienteId, c.ClienteNombre, c.ClienteApellido
-        HAVING Saldo > 0
-        ORDER BY Cliente
+        HAVING SUM(v.Total - COALESCE(v.VentaEntrega,0)) > 0
+        ORDER BY CONCAT(TRIM(c.ClienteNombre), ' ', TRIM(c.ClienteApellido))
       `;
       db.query(query, (err, results) => {
         if (err) return reject(err);

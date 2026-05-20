@@ -93,6 +93,15 @@ module.exports = {
   "canchareservaestado": "CanchaReservaEstado",
   "canchareservaobservacion": "CanchaReservaObservacion",
   "canchareservacreadoen": "CanchaReservaCreadoEn",
+  "canchacreditoid": "CanchaCreditoId",
+  "canchacreditomonto": "CanchaCreditoMonto",
+  "canchacreditosaldo": "CanchaCreditoSaldo",
+  "canchacreditofecha": "CanchaCreditoFecha",
+  "canchacreditopagocant": "CanchaCreditoPagoCant",
+  "canchacreditopagoid": "CanchaCreditoPagoId",
+  "canchacreditopagofecha": "CanchaCreditoPagoFecha",
+  "canchacreditopagomonto": "CanchaCreditoPagoMonto",
+  "canchacreditopagotipo": "CanchaCreditoPagoTipo",
   "canchatarifaid": "CanchaTarifaId",
   "canchatarifanombre": "CanchaTarifaNombre",
   "canchatarifadiassemana": "CanchaTarifaDiasSemana",
@@ -205,6 +214,8 @@ module.exports = {
   "configuracion": "ConfigClave",
   "cancha": "CanchaId",
   "cancha_reserva": "CanchaReservaId",
-  "cancha_tarifa": "CanchaTarifaId"
+  "cancha_tarifa": "CanchaTarifaId",
+  "cancha_credito": "CanchaCreditoId",
+  "cancha_credito_pago": "CanchaCreditoId"
 },
 };
