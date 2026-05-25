@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePermiso } from "../../hooks/usePermiso";
 import {
   getComprasPaginated,
@@ -32,6 +33,7 @@ interface Pagination {
 }
 
 export default function ComprasPage() {
+  const navigate = useNavigate();
   const [comprasData, setComprasData] = useState<{
     compras: Compra[];
     pagination: Pagination;
@@ -381,10 +383,9 @@ export default function ComprasPage() {
     setCurrentPage(1);
   };
 
-  const handleCreateCompra = () => {
-    // Implementar la lógica para crear una nueva compra
-    console.log("Crear nueva compra");
-  };
+  // El botón "Nueva compra" navega a la pantalla del flujo de compras
+  // (`/compras`), que es donde vive el form de carga.
+  const handleCreateCompra = () => navigate("/compras");
 
   if (!puedeLeer) return <PermissionDenied resource="las compras" />;
   if (loading) return <LoadingState message="Cargando compras..." />;

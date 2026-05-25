@@ -1,5 +1,6 @@
 const db = require("../config/db");
 const { calcularDV } = require("../utils/rucDv");
+const { escapeLike } = require("../utils/sql");
 
 // Calcula el DV automaticamente cuando la CI es estrictamente numerica.
 // Si la CI esta vacia o trae caracteres no numericos (placeholders tipo
@@ -141,7 +142,9 @@ const Cliente = {
         ORDER BY ${sortField} ${order}
         LIMIT ? OFFSET ?
       `;
-      const searchValue = `%${term}%`;
+      // escapeLike: un término con `%` o `_` rompía el filtro al hacer pasar
+      // todo el resultset. Otros models (plan, pago, suscripcion) lo usan.
+      const searchValue = `%${escapeLike(term)}%`;
       const searchParams = [searchValue, searchValue, searchValue];
 
       db.query(

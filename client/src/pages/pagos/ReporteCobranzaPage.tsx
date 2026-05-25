@@ -17,7 +17,9 @@ interface Fila {
   cantidad: number;
   contado: number;
   pos: number;
+  voucher: number;
   transferencia: number;
+  credito: number;
   total: number;
 }
 
@@ -25,7 +27,9 @@ interface Totales {
   cantidad: number;
   contado: number;
   pos: number;
+  voucher: number;
   transferencia: number;
+  credito: number;
   total: number;
 }
 
@@ -166,7 +170,7 @@ export default function ReporteCobranzaPage() {
       </div>
 
       {totales && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
           <div className="bg-white rounded-lg shadow p-3">
             <div className="text-xs text-gray-500">Cobros</div>
             <div className="text-xl font-semibold">
@@ -186,9 +190,21 @@ export default function ReporteCobranzaPage() {
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-3">
+            <div className="text-xs text-gray-500">Voucher</div>
+            <div className="text-xl font-semibold">
+              Gs. {formatMiles(totales.voucher)}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-3">
             <div className="text-xs text-gray-500">Transferencia</div>
             <div className="text-xl font-semibold">
               Gs. {formatMiles(totales.transferencia)}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-3">
+            <div className="text-xs text-gray-500">Crédito</div>
+            <div className="text-xl font-semibold">
+              Gs. {formatMiles(totales.credito)}
             </div>
           </div>
           <div className="bg-blue-50 rounded-lg shadow p-3 border border-blue-200">
@@ -217,7 +233,13 @@ export default function ReporteCobranzaPage() {
                 POS
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Voucher
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                 Transferencia
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Crédito
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                 Total
@@ -228,7 +250,7 @@ export default function ReporteCobranzaPage() {
             {filas.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-4 py-6 text-center text-sm text-gray-500"
                 >
                   {loading
@@ -252,7 +274,13 @@ export default function ReporteCobranzaPage() {
                     Gs. {formatMiles(f.pos)}
                   </td>
                   <td className="px-4 py-2 text-sm text-right">
+                    Gs. {formatMiles(f.voucher)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-right">
                     Gs. {formatMiles(f.transferencia)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-right">
+                    Gs. {formatMiles(f.credito)}
                   </td>
                   <td className="px-4 py-2 text-sm text-right font-semibold">
                     Gs. {formatMiles(f.total)}

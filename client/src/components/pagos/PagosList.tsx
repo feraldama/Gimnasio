@@ -78,7 +78,7 @@ export default function PagosList({
         if (!pago.ClienteId) return nombre;
         return (
           <Link
-            to={`/clientes/${pago.ClienteId}/historial-gimnasio`}
+            to={`/clientes/${pago.ClienteId}/ficha`}
             className="text-blue-600 hover:underline"
             title="Ver historial del cliente"
           >

@@ -97,6 +97,55 @@ export default function CobrarReservaModal({
       });
       return;
     }
+
+    // Si el total cobrado es menor al sugerido y hay cliente vinculado,
+    // ofrecemos pasar el faltante a crédito (en lugar de perder ese saldo
+    // silenciosamente al marcar la reserva como Pagada). Si el operador
+    // elige cobrar parcial sin crédito, confirmamos una vez para que sea
+    // explícito.
+    const faltante = sugerido - total;
+    const yaTieneCR = (montos.CR || 0) > 0;
+    if (faltante > 0 && !yaTieneCR) {
+      if (!esInvitado) {
+        const res = await Swal.fire({
+          icon: "question",
+          title: `Falta cobrar Gs. ${formatMiles(faltante)}`,
+          html: `
+            <p class="text-sm text-left">
+              El total ingresado es <strong>menor</strong> al sugerido.
+              ¿Querés pasar el faltante a <strong>Crédito</strong> para que
+              ${clienteLabel} quede debiendo, o cobrás parcial sin registrar deuda?
+            </p>
+          `,
+          showCancelButton: true,
+          showDenyButton: true,
+          confirmButtonText: "Pasar a Crédito",
+          confirmButtonColor: "#16a34a",
+          denyButtonText: "Cobrar parcial",
+          denyButtonColor: "#6b7280",
+          cancelButtonText: "Cancelar",
+        });
+        if (res.isDismissed) return;
+        if (res.isConfirmed) {
+          // Sumar el faltante a CR y reintentar el submit.
+          setMontos((p) => ({ ...p, CR: (p.CR || 0) + faltante }));
+          return; // El usuario va a confirmar manualmente con el botón.
+        }
+        // denied → continuar con cobro parcial (sin pasar a crédito).
+      } else {
+        // Invitado sin cliente: no podemos crear crédito, pero igual lo
+        // alertamos para que no quede saldo perdido por error.
+        const res = await Swal.fire({
+          icon: "warning",
+          title: `Faltan Gs. ${formatMiles(faltante)}`,
+          text: "La reserva queda como Pagada por el monto que ingresaste. ¿Continuar?",
+          showCancelButton: true,
+          confirmButtonText: "Sí, cobrar parcial",
+        });
+        if (!res.isConfirmed) return;
+      }
+    }
+
     const pagos = METODOS
       .filter((m) => (montos[m.codigo] || 0) > 0)
       .map((m) => ({ tipo: m.codigo, monto: montos[m.codigo], label: m.label }));

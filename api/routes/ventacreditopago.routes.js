@@ -2,36 +2,49 @@ const express = require("express");
 const router = express.Router();
 const ventaCreditoPagoController = require("../controllers/ventacreditopago.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
 
 router.use(authMiddleware);
 
-router.post("/recibir", authMiddleware, ventaCreditoPagoController.recibir);
-router.get("/search", authMiddleware, ventaCreditoPagoController.searchPagos);
-router.get("/", authMiddleware, ventaCreditoPagoController.getAll);
+// "recibir" es el flujo de cobro de crédito de la cantina (pantalla
+// /credito-pagos). Por consistencia con el cobro de crédito de cancha,
+// usa el recurso COBROCREDITO.
+router.post(
+  "/recibir",
+  requirePerm("COBROCREDITO", "crear"),
+  ventaCreditoPagoController.recibir
+);
+
+router.get(
+  "/search",
+  requirePerm("VENTAS", "leer"),
+  ventaCreditoPagoController.searchPagos
+);
+router.get("/", requirePerm("VENTAS", "leer"), ventaCreditoPagoController.getAll);
 router.get(
   "/paginated",
-  authMiddleware,
+  requirePerm("VENTAS", "leer"),
   ventaCreditoPagoController.getAllPaginated
 );
 router.get(
   "/credito/:ventaCreditoId",
-  authMiddleware,
+  requirePerm("VENTAS", "leer"),
   ventaCreditoPagoController.getByVentaCreditoId
 );
 router.get(
   "/:ventaCreditoId/:pagoId",
-  authMiddleware,
+  requirePerm("VENTAS", "leer"),
   ventaCreditoPagoController.getById
 );
-router.post("/", authMiddleware, ventaCreditoPagoController.create);
+router.post("/", requirePerm("VENTAS", "crear"), ventaCreditoPagoController.create);
 router.put(
   "/:ventaCreditoId/:pagoId",
-  authMiddleware,
+  requirePerm("VENTAS", "editar"),
   ventaCreditoPagoController.update
 );
 router.delete(
   "/:ventaCreditoId/:pagoId",
-  authMiddleware,
+  requirePerm("VENTAS", "eliminar"),
   ventaCreditoPagoController.delete
 );
 

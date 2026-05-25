@@ -5,6 +5,9 @@ import {
   updateReserva,
   deleteReserva,
   sugerirMontoReserva,
+  anularCobroReserva,
+  listarSerie,
+  cancelarSerie,
   type Cancha,
   type CanchaReserva,
   type SugerirMontoResp,
@@ -67,6 +70,9 @@ export interface ReservaFormInitial {
   CanchaReservaMonto?: number;
   CanchaReservaEstado?: string;
   CanchaReservaObservacion?: string;
+  // Si la reserva es parte de una serie, el modal muestra un panel especial
+  // con la opción de cancelar la serie completa.
+  CanchaReservaSerieId?: number | null;
 }
 
 interface Props {
@@ -163,6 +169,13 @@ export default function ReservaFormModal({
   const [montoTocadoManual, setMontoTocadoManual] = useState(false);
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [showCobrarModal, setShowCobrarModal] = useState(false);
+  // Conteo de reservas activas (R+P) de la serie a la que pertenece esta reserva.
+  // null = todavía no se consultó / no es de una serie. Lo cargamos al abrir.
+  const [serieInfo, setSerieInfo] = useState<{
+    total: number;
+    activas: number;
+    pagadas: number;
+  } | null>(null);
 
   // Resetear el estado cada vez que se abre con un nuevo `initial`.
   useEffect(() => {
@@ -170,6 +183,28 @@ export default function ReservaFormModal({
     setForm(buildInitialForm(initial));
     setSugerencia(null);
     setMontoTocadoManual(Boolean(initial?.CanchaReservaId));
+    setSerieInfo(null);
+    // Si la reserva es parte de una serie, traer el resumen (cuántas R/P/X)
+    // para mostrarlo en el panel.
+    const serieId = initial?.CanchaReservaSerieId;
+    if (open && serieId) {
+      let cancelado = false;
+      listarSerie(serieId)
+        .then((r) => {
+          if (cancelado) return;
+          setSerieInfo({
+            total: r.data.length,
+            activas: r.data.filter((x) => x.CanchaReservaEstado === "R").length,
+            pagadas: r.data.filter((x) => x.CanchaReservaEstado === "P").length,
+          });
+        })
+        .catch(() => {
+          /* silencioso — sin panel, no es bloqueante */
+        });
+      return () => {
+        cancelado = true;
+      };
+    }
   }, [open, initial]);
 
   // Pedir sugerencia de tarifa cuando hay datos suficientes.
@@ -287,13 +322,142 @@ export default function ReservaFormModal({
       onSaved();
       onClose();
     } catch (e: unknown) {
+      const err = e as { message?: string; code?: string };
       Swal.fire({
         icon: "error",
-        title: "Error",
-        text: e instanceof Error ? e.message : "No se pudo eliminar",
+        title:
+          err.code === "TIENE_CREDITO_PENDIENTE"
+            ? "Crédito pendiente"
+            : "Error",
+        text: err.message || "No se pudo eliminar",
       });
     }
   }, [form.CanchaReservaId, onClose, onSaved]);
+
+  // Anula el cobro: revierte caja + borra crédito + reserva vuelve a R.
+  // Confirmación explícita porque es destructivo (modifica caja).
+  const handleAnularCobro = useCallback(async () => {
+    if (!form.CanchaReservaId) return;
+    const c = await Swal.fire({
+      title: "¿Anular el cobro?",
+      html: `
+        <p class="text-sm text-left">
+          Esta acción va a:
+        </p>
+        <ul class="text-sm text-left list-disc list-inside mt-2">
+          <li>Registrar los movimientos de contrapartida en la caja.</li>
+          <li>Restar de tu caja el efectivo cobrado (sólo Contado).</li>
+          <li>Borrar el crédito asociado a esta reserva (si existe y no recibió pagos).</li>
+          <li>Volver la reserva a estado Reservada.</li>
+        </ul>
+        <p class="text-xs text-amber-700 mt-3">
+          Si la reserva tenía un crédito con pagos parciales aplicados, la
+          anulación se rechaza — anular esos pagos primero.
+        </p>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, anular",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d97706",
+    });
+    if (!c.isConfirmed) return;
+    try {
+      const r = await anularCobroReserva(form.CanchaReservaId);
+      await Swal.fire({
+        icon: "success",
+        title: "Cobro anulado",
+        html: `
+          <div class="text-sm text-left">
+            <p>Movimientos revertidos: <strong>${r.anulacion.movimientosRevertidos}</strong></p>
+            <p>Efectivo descontado de caja: <strong>Gs. ${formatMiles(r.anulacion.efectivoDescontadoDeCaja)}</strong></p>
+            ${
+              r.anulacion.creditoBorrado
+                ? "<p>Crédito asociado borrado.</p>"
+                : ""
+            }
+          </div>
+        `,
+        confirmButtonText: "Cerrar",
+      });
+      onSaved();
+      onClose();
+    } catch (e: unknown) {
+      const err = e as { message?: string; code?: string };
+      const titulos = {
+        SIN_CAJA: "Sin caja abierta",
+        NO_PAGADA: "Reserva no pagada",
+        CREDITO_CON_PAGOS: "Crédito con pagos parciales",
+      } as const;
+      Swal.fire({
+        icon: "error",
+        title: titulos[err.code as keyof typeof titulos] || "No se pudo anular",
+        text: err.message || "Error al anular el cobro",
+      });
+    }
+  }, [form.CanchaReservaId, onClose, onSaved]);
+
+  // Cancela todas las reservas R de la serie. Las P no se tocan acá — anularlas
+  // requiere el flujo de anular-cobro individual.
+  const handleCancelarSerie = useCallback(async () => {
+    const serieId = initial?.CanchaReservaSerieId;
+    if (!serieId) return;
+    const c = await Swal.fire({
+      title: "¿Cancelar la serie completa?",
+      html: `
+        <p class="text-sm text-left">
+          Vas a marcar como <strong>Canceladas</strong> todas las reservas
+          activas de esta serie.
+        </p>
+        ${
+          serieInfo
+            ? `<ul class="text-sm text-left list-disc list-inside mt-2">
+                 <li>Total en la serie: ${serieInfo.total}</li>
+                 <li>Se cancelarán: ${serieInfo.activas}</li>
+                 ${
+                   serieInfo.pagadas > 0
+                     ? `<li class="text-amber-700">Pagadas (no se tocan): ${serieInfo.pagadas} — anularlas requiere anular-cobro individual.</li>`
+                     : ""
+                 }
+               </ul>`
+            : ""
+        }
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, cancelar serie",
+      cancelButtonText: "Volver",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!c.isConfirmed) return;
+    try {
+      const r = await cancelarSerie(serieId);
+      await Swal.fire({
+        icon: "success",
+        title: "Serie cancelada",
+        html: `
+          <div class="text-sm text-left">
+            <p>Reservas canceladas: <strong>${r.canceladas}</strong></p>
+            ${
+              r.conPagadas.length > 0
+                ? `<p class="text-amber-700 mt-2">${r.conPagadas.length} reserva(s) pagada(s) quedaron sin tocar.</p>`
+                : ""
+            }
+          </div>
+        `,
+        confirmButtonText: "Cerrar",
+      });
+      onSaved();
+      onClose();
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: err.message || "No se pudo cancelar la serie",
+      });
+    }
+  }, [initial, serieInfo, onClose, onSaved]);
 
   if (!open) return null;
 
@@ -442,17 +606,37 @@ export default function ReservaFormModal({
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Estado</label>
+            {/* Si la reserva ya está Pagada, deshabilitamos el select porque
+                pasarla a R/X desde acá no reverte ni el movimiento de caja
+                ni el crédito asociado — la caja quedaría inconsistente. La
+                única forma legítima de revertir un cobro es una anulación
+                explícita (ver hallazgo #4 de auditoría). */}
             <select
-              className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer"
+              className={`w-full px-3 py-2 border border-gray-300 rounded-md ${
+                form.CanchaReservaEstado === "P"
+                  ? "cursor-not-allowed bg-gray-100 text-gray-500"
+                  : "cursor-pointer"
+              }`}
               value={form.CanchaReservaEstado}
               onChange={(e) =>
                 setForm({ ...form, CanchaReservaEstado: e.target.value })
+              }
+              disabled={form.CanchaReservaEstado === "P"}
+              title={
+                form.CanchaReservaEstado === "P"
+                  ? "Una reserva pagada no se edita desde acá. Para revertir el cobro hace falta un proceso de anulación."
+                  : ""
               }
             >
               <option value="R">Reservada</option>
               <option value="P">Pagada</option>
               <option value="X">Cancelada</option>
             </select>
+            {form.CanchaReservaEstado === "P" && (
+              <p className="mt-1 text-xs text-amber-700">
+                Reserva pagada — el estado no se puede editar manualmente.
+              </p>
+            )}
           </div>
 
           <div>
@@ -525,6 +709,25 @@ export default function ReservaFormModal({
                       </strong>{" "}
                       <span className="text-gray-500">
                         ({sugerencia.banda.nombre || "banda"} ·{" "}
+                        {sugerencia.duracionHoras.toFixed(1)} h)
+                      </span>
+                    </>
+                  ) : sugerencia.fuente === "MIXTA" && sugerencia.bandas ? (
+                    <>
+                      Tarifa sugerida (mixta):{" "}
+                      <strong className="text-blue-700">
+                        Gs. {formatMiles(sugerencia.monto)}
+                      </strong>{" "}
+                      <span
+                        className="text-gray-500"
+                        title={sugerencia.bandas
+                          .map(
+                            (b) =>
+                              `${b.nombre}: ${b.horas}h × Gs.${formatMiles(b.precio)}`
+                          )
+                          .join("\n")}
+                      >
+                        ({sugerencia.bandas.length} bandas ·{" "}
                         {sugerencia.duracionHoras.toFixed(1)} h)
                       </span>
                     </>
@@ -631,6 +834,59 @@ export default function ReservaFormModal({
             >
               <BanknotesIcon className="w-4 h-4" />
               Cobrar
+            </Button>
+          </div>
+        )}
+
+        {esEdicion && initial?.CanchaReservaSerieId && (
+          <div className="mt-4 flex items-center justify-between gap-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <div className="text-sm text-blue-900">
+              <strong>🔁 Parte de una serie recurrente</strong>
+              {serieInfo ? (
+                <div className="text-xs mt-0.5">
+                  Serie #{initial.CanchaReservaSerieId} ·{" "}
+                  {serieInfo.total} reserva{serieInfo.total === 1 ? "" : "s"} en total
+                  {serieInfo.activas > 0
+                    ? ` · ${serieInfo.activas} activa${serieInfo.activas === 1 ? "" : "s"}`
+                    : ""}
+                  {serieInfo.pagadas > 0
+                    ? ` · ${serieInfo.pagadas} pagada${serieInfo.pagadas === 1 ? "" : "s"}`
+                    : ""}
+                </div>
+              ) : (
+                <div className="text-xs mt-0.5 text-blue-700">Cargando resumen...</div>
+              )}
+            </div>
+            {puedeEliminar &&
+              serieInfo &&
+              serieInfo.activas > 0 && (
+                <Button
+                  variant="danger"
+                  onClick={handleCancelarSerie}
+                  disabled={saving}
+                  className="cursor-pointer whitespace-nowrap"
+                  title="Cancelar todas las reservas activas de la serie"
+                >
+                  Cancelar serie
+                </Button>
+              )}
+          </div>
+        )}
+
+        {esEdicion && form.CanchaReservaEstado === "P" && puedeEliminar && (
+          <div className="mt-4 flex items-center justify-between gap-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <div className="text-sm text-amber-900">
+              <strong>Anular cobro:</strong> revierte los movimientos de caja,
+              borra el crédito asociado (si lo hay) y deja la reserva como
+              Reservada para volver a cobrarla.
+            </div>
+            <Button
+              variant="warning"
+              onClick={handleAnularCobro}
+              disabled={saving}
+              className="cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              Anular cobro
             </Button>
           </div>
         )}

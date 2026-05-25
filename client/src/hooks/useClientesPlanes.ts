@@ -24,6 +24,8 @@ export interface Plan {
   PlanDuracion: number;
   PlanPrecio?: number;
   PlanActivo?: boolean | number;
+  PlanModalidad?: "MENSUAL" | "CLASES" | "OPEN" | string;
+  PlanCantidadClases?: number;
   [key: string]: unknown;
 }
 

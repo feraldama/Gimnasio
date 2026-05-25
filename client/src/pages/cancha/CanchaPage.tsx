@@ -25,6 +25,7 @@ import { formatMiles, formatDateLocal } from "../../utils/utils";
 import ReservaFormModal, {
   type ReservaFormInitial,
 } from "../../components/cancha/ReservaFormModal";
+import ReservaRecurrenteModal from "../../components/cancha/ReservaRecurrenteModal";
 import type { Cliente as ClienteOpt } from "../../components/common/ClienteFormModal";
 
 interface PaginationMeta {
@@ -75,6 +76,7 @@ export default function CanchaPage() {
   const [clientes, setClientes] = useState<ClienteOpt[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [recurrenteOpen, setRecurrenteOpen] = useState(false);
   const [initial, setInitial] = useState<ReservaFormInitial | undefined>(
     undefined
   );
@@ -136,6 +138,7 @@ export default function CanchaPage() {
       CanchaReservaMonto: r.CanchaReservaMonto || 0,
       CanchaReservaEstado: r.CanchaReservaEstado || "R",
       CanchaReservaObservacion: r.CanchaReservaObservacion || "",
+      CanchaReservaSerieId: r.CanchaReservaSerieId ?? null,
     });
     setModalOpen(true);
   };
@@ -177,13 +180,23 @@ export default function CanchaPage() {
           description="Registro de reservas de cancha. Las reservas en estado 'Pagada' alimentan el reporte diario."
           actions={
             puedeCrear && (
-              <Button
-                variant="primary"
-                onClick={handleNew}
-                className="cursor-pointer"
-              >
-                Nueva reserva
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setRecurrenteOpen(true)}
+                  className="cursor-pointer"
+                  title="Crear una serie de reservas semanales"
+                >
+                  Recurrente
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleNew}
+                  className="cursor-pointer"
+                >
+                  Nueva reserva
+                </Button>
+              </div>
             )
           }
         />
@@ -261,9 +274,19 @@ export default function CanchaPage() {
                           `Cancha ${r.CanchaId}`}
                       </td>
                       <td className="px-3 py-2">
-                        {r.ClienteNombre
-                          ? `${r.ClienteNombre} ${r.ClienteApellido ?? ""}`.trim()
-                          : r.CanchaReservaCliente || "—"}
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.ClienteNombre
+                            ? `${r.ClienteNombre} ${r.ClienteApellido ?? ""}`.trim()
+                            : r.CanchaReservaCliente || "—"}
+                          {r.CanchaReservaSerieId ? (
+                            <span
+                              className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded"
+                              title={`Parte de la serie #${r.CanchaReservaSerieId}`}
+                            >
+                              🔁 serie
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="px-3 py-2">
                         {formatHora(r.CanchaReservaHoraInicio)} —{" "}
@@ -339,6 +362,14 @@ export default function CanchaPage() {
         puedeCrear={puedeCrear}
         puedeEditar={puedeEditar}
         puedeEliminar={puedeEliminar}
+      />
+
+      <ReservaRecurrenteModal
+        open={recurrenteOpen}
+        canchas={canchas}
+        clientes={clientes}
+        onClose={() => setRecurrenteOpen(false)}
+        onCreada={fetchData}
       />
     </div>
   );

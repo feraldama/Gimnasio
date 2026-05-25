@@ -1,5 +1,35 @@
 const Plan = require("../models/plan.model");
 
+// Reglas mínimas de coherencia para los campos del plan según su modalidad.
+// Sin estas validaciones, una mala carga (OPEN con duración 0, CLASES con
+// cupo 0) genera suscripciones que vencen el mismo día o no permiten ingresar.
+// Devuelve un mensaje de error o null si todo está OK.
+function validarPlan(body) {
+  const modalidad = body.PlanModalidad || "MENSUAL";
+  const duracion = Number(body.PlanDuracion);
+  const precio = Number(body.PlanPrecio);
+  const cupo = Number(body.PlanCantidadClases);
+
+  if (modalidad === "MENSUAL" || modalidad === "OPEN") {
+    if (!Number.isFinite(duracion) || duracion <= 0) {
+      return `Para modalidad ${modalidad === "OPEN" ? "Pase libre" : "Mensual"} la duración debe ser mayor a cero (en días).`;
+    }
+  }
+  if (modalidad === "CLASES") {
+    if (!Number.isFinite(cupo) || cupo <= 0) {
+      return "Para modalidad por clases, la cantidad de clases (cupo) debe ser mayor a cero.";
+    }
+    if (!Number.isFinite(duracion) || duracion <= 0) {
+      return "Para modalidad por clases, la duración (en días) debe ser mayor a cero.";
+    }
+  }
+  // El precio puede ser 0 (cortesía, demo) salvo que sea negativo.
+  if (Number.isFinite(precio) && precio < 0) {
+    return "El precio no puede ser negativo.";
+  }
+  return null;
+}
+
 exports.getAll = async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const page = parseInt(req.query.page) || 1;
@@ -36,6 +66,8 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
+    const error = validarPlan(req.body);
+    if (error) return res.status(400).json({ message: error });
     const plan = await Plan.create(req.body);
     res.status(201).json({ message: "Plan creado exitosamente", data: plan });
   } catch (error) {
@@ -45,6 +77,8 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
+    const error = validarPlan(req.body);
+    if (error) return res.status(400).json({ message: error });
     const plan = await Plan.update(req.params.id, req.body);
     if (!plan) {
       return res.status(404).json({ message: "Plan no encontrado" });

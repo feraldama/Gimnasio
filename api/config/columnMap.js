@@ -93,6 +93,7 @@ module.exports = {
   "canchareservaestado": "CanchaReservaEstado",
   "canchareservaobservacion": "CanchaReservaObservacion",
   "canchareservacreadoen": "CanchaReservaCreadoEn",
+  "canchareservaserieid": "CanchaReservaSerieId",
   "canchacreditoid": "CanchaCreditoId",
   "canchacreditomonto": "CanchaCreditoMonto",
   "canchacreditosaldo": "CanchaCreditoSaldo",
@@ -102,6 +103,12 @@ module.exports = {
   "canchacreditopagofecha": "CanchaCreditoPagoFecha",
   "canchacreditopagomonto": "CanchaCreditoPagoMonto",
   "canchacreditopagotipo": "CanchaCreditoPagoTipo",
+  "canchabloqueoid": "CanchaBloqueoId",
+  "canchabloqueofecha": "CanchaBloqueoFecha",
+  "canchabloqueohoradesde": "CanchaBloqueoHoraDesde",
+  "canchabloqueohorahasta": "CanchaBloqueoHoraHasta",
+  "canchabloqueomotivo": "CanchaBloqueoMotivo",
+  "canchabloqueocreadoen": "CanchaBloqueoCreadoEn",
   "canchatarifaid": "CanchaTarifaId",
   "canchatarifanombre": "CanchaTarifaNombre",
   "canchatarifadiassemana": "CanchaTarifaDiasSemana",
@@ -216,6 +223,7 @@ module.exports = {
   "cancha_reserva": "CanchaReservaId",
   "cancha_tarifa": "CanchaTarifaId",
   "cancha_credito": "CanchaCreditoId",
-  "cancha_credito_pago": "CanchaCreditoId"
+  "cancha_credito_pago": "CanchaCreditoId",
+  "cancha_bloqueo": "CanchaBloqueoId"
 },
 };

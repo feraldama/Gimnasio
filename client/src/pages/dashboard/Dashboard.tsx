@@ -3,9 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import {
   UserGroupIcon,
-  UserPlusIcon,
   CheckCircleIcon,
-  ShieldCheckIcon,
   ChartBarIcon,
   DocumentChartBarIcon,
   Cog6ToothIcon,
@@ -13,6 +11,8 @@ import {
   PlusIcon,
   ClockIcon,
   ArrowPathIcon,
+  BanknotesIcon,
+  KeyIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../contexts/useAuth";
 import {
@@ -23,12 +23,21 @@ import {
   TextInput,
 } from "../../components/common/ui";
 import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
+import {
+  getDashboardGimnasioKpis,
+  type DashboardGimnasioKpis,
+} from "../../services/reportes.service";
 import { createPago, createPagoLote } from "../../services/pagos.service";
 import { usePermiso } from "../../hooks/usePermiso";
 import CrearPagoModal, {
   type PagoSubmitData,
 } from "../../components/pagos/CrearPagoModal";
-import { addDaysLocal, formatDateLocal, todayLocalISO } from "../../utils/utils";
+import {
+  addDaysLocal,
+  formatDateLocal,
+  formatMiles,
+  todayLocalISO,
+} from "../../utils/utils";
 
 interface QuickAccessProps {
   icon: ComponentType<{ className?: string }>;
@@ -274,7 +283,7 @@ function ProximasAVencer() {
                   <tr key={s.SuscripcionId} className="hover:bg-gray-50">
                     <td className="px-4 py-2">
                       <Link
-                        to={`/clientes/${s.ClienteId}/historial-gimnasio`}
+                        to={`/clientes/${s.ClienteId}/ficha`}
                         className="text-blue-600 hover:underline"
                       >
                         {`${s.ClienteNombre || ""} ${s.ClienteApellido || ""}`.trim() || "—"}
@@ -338,6 +347,63 @@ function ProximasAVencer() {
   );
 }
 
+function KpisGimnasio() {
+  // KPIs en vivo desde /reportes/dashboard/gimnasio-kpis. Reemplaza valores
+  // hardcoded (Users:25, Nuevos:3) por métricas que se calculan al vuelo.
+  const [kpis, setKpis] = useState<DashboardGimnasioKpis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDashboardGimnasioKpis()
+      .then((d) => {
+        if (!cancelled) setKpis(d);
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setError(e?.message || "No se pudieron cargar las métricas");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section
+      aria-label="Resumen de métricas"
+      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+    >
+      <StatCard
+        label="Socios activos"
+        value={kpis ? String(kpis.sociosActivos) : "—"}
+        tone="success"
+        icon={CheckCircleIcon}
+        hint={error || "Suscripciones vigentes hoy"}
+      />
+      <StatCard
+        label="Vencen en 7 días"
+        value={kpis ? String(kpis.proximosAVencer7d) : "—"}
+        tone="warning"
+        icon={ClockIcon}
+        hint="Anticipar renovaciones"
+      />
+      <StatCard
+        label="Cobrado hoy"
+        value={kpis ? `Gs. ${formatMiles(kpis.cobradoHoy)}` : "—"}
+        tone="brand"
+        icon={BanknotesIcon}
+        hint={kpis ? `${kpis.cobrosHoy} cobros` : undefined}
+      />
+      <StatCard
+        label="Asistencias hoy"
+        value={kpis ? String(kpis.asistenciasHoy) : "—"}
+        tone="info"
+        icon={KeyIcon}
+      />
+    </section>
+  );
+}
+
 function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -369,38 +435,8 @@ function Dashboard() {
         </Button>
       </header>
 
-      {/* KPIs */}
-      <section
-        aria-label="Resumen de métricas"
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
-      >
-        <StatCard
-          label="Usuarios totales"
-          value="25"
-          tone="brand"
-          icon={UserGroupIcon}
-        />
-        <StatCard
-          label="Nuevos hoy"
-          value="3"
-          tone="warning"
-          icon={UserPlusIcon}
-          trend={{ direction: "up", label: "+3 vs ayer" }}
-        />
-        <StatCard
-          label="Activos"
-          value="18"
-          tone="success"
-          icon={CheckCircleIcon}
-          hint="72% del total"
-        />
-        <StatCard
-          label="Administradores"
-          value="4"
-          tone="info"
-          icon={ShieldCheckIcon}
-        />
-      </section>
+      {/* KPIs reales del gimnasio (en vivo, no hardcoded) */}
+      <KpisGimnasio />
 
       {/* Suscripciones próximas a vencer (gimnasio) */}
       <ProximasAVencer />

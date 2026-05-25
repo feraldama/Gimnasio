@@ -285,22 +285,27 @@ export default function PlanesList({
                       htmlFor="PlanDuracion"
                       className="block mb-2 text-sm font-medium text-gray-900"
                     >
-                      Duración (días)
+                      Vigencia (días)
                     </label>
                     <input
                       type="number"
                       name="PlanDuracion"
                       id="PlanDuracion"
-                      value={
-                        formData.PlanDuracion ||
-                        (formData.PlanModalidad === "OPEN" ? 0 : "")
+                      value={formData.PlanDuracion || ""}
+                      placeholder={
+                        formData.PlanModalidad === "OPEN" ? "365" : "30"
                       }
-                      placeholder="30"
                       onChange={handleInputChange}
                       className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      min={formData.PlanModalidad === "OPEN" ? "0" : "1"}
-                      required={formData.PlanModalidad !== "OPEN"}
+                      min="1"
+                      required
                     />
+                    {formData.PlanModalidad === "OPEN" && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Pase libre = el alumno puede ingresar sin lista durante
+                        la vigencia. Sugerencia: 365 días (anual).
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-6 sm:col-span-3">
                     <label
@@ -401,21 +406,20 @@ export default function PlanesList({
                       onChange={(e) => {
                         const nueva = e.target.value;
                         setFormData((prev) => {
-                          // Cruzar la "frontera" OPEN <-> no-OPEN limpia Precio
-                          // y Duración para que el form refleje los defaults
-                          // sensatos de cada modalidad (0/0 en OPEN, vacío en
-                          // los pagos). Cambiar entre MENSUAL <-> CLASES no
-                          // toca esos campos: los valores ya tipeados se reusan.
-                          const cruzaOpen =
-                            (prev.PlanModalidad === "OPEN") !==
-                            (nueva === "OPEN");
+                          // Cambio de modalidad. Antes pasaba a OPEN ponía
+                          // PlanDuracion=0 — eso causaba que la suscripción
+                          // venza el mismo día. Ahora si el operador no había
+                          // tipeado nada (o estaba en 0), sugerimos 365 para
+                          // OPEN (vigencia típica de un pase libre anual).
+                          const yaTenia = Number(prev.PlanDuracion) > 0;
+                          const nuevaDuracion =
+                            nueva === "OPEN" && !yaTenia ? 365 : prev.PlanDuracion;
                           return {
                             ...prev,
                             PlanModalidad: nueva,
                             PlanCantidadClases:
                               nueva === "CLASES" ? prev.PlanCantidadClases : 0,
-                            PlanPrecio: cruzaOpen ? 0 : prev.PlanPrecio,
-                            PlanDuracion: cruzaOpen ? 0 : prev.PlanDuracion,
+                            PlanDuracion: nuevaDuracion,
                           };
                         });
                       }}

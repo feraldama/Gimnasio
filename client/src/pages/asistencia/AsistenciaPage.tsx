@@ -324,7 +324,7 @@ export default function AsistenciaPage() {
                     </td>
                     <td className="px-4 py-2">
                       <Link
-                        to={`/clientes/${a.ClienteId}/historial-gimnasio`}
+                        to={`/clientes/${a.ClienteId}/ficha`}
                         className="text-blue-600 hover:underline"
                       >
                         {`${a.ClienteNombre || ""} ${a.ClienteApellido || ""}`.trim() || "—"}

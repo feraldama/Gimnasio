@@ -156,3 +156,21 @@ export const getReporteCanchaHeatmap = (
 
 export const getReporteCantinaDiario = (anio: number, mes: number) =>
   fetchReporte<ReporteCantinaResponse>("/reportes/cantina/diario", anio, mes);
+
+export interface DashboardGimnasioKpis {
+  sociosActivos: number;
+  proximosAVencer7d: number;
+  cobradoHoy: number;
+  cobrosHoy: number;
+  asistenciasHoy: number;
+}
+
+export const getDashboardGimnasioKpis = async (): Promise<DashboardGimnasioKpis> => {
+  try {
+    const r = await api.get("/reportes/dashboard/gimnasio-kpis");
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al obtener KPIs" };
+  }
+};

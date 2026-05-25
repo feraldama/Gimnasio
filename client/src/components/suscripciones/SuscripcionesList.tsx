@@ -19,6 +19,12 @@ import {
   todayLocalISO,
 } from "../../utils/utils";
 import {
+  calcularEstadoPorFechas,
+  getEstadoDisplay as utilGetEstadoDisplay,
+  isEstadoManual as utilIsEstadoManual,
+  type EstadoDisplay,
+} from "../../utils/suscripcionEstado";
+import {
   useClientesPlanes,
   type Plan,
 } from "../../hooks/useClientesPlanes";
@@ -31,9 +37,12 @@ interface Suscripcion {
   SuscripcionFechaInicio: string;
   SuscripcionFechaFin: string;
   SuscripcionEstado?: string;
+  SuscripcionClasesRestantes?: number;
   ClienteNombre?: string;
   ClienteApellido?: string;
   PlanNombre?: string;
+  PlanModalidad?: string;
+  PlanCantidadClases?: number;
   EstadoPago?: string;
   [key: string]: unknown;
 }
@@ -90,6 +99,13 @@ export default function SuscripcionesList({
   sortOrder,
   onSort,
 }: SuscripcionesListProps) {
+  const [filtroEstado, setFiltroEstado] = useState<EstadoDisplay | "TODOS">(
+    "TODOS"
+  );
+  const [filtroPago, setFiltroPago] = useState<"TODOS" | "PAGADA" | "PENDIENTE">(
+    "TODOS"
+  );
+
   const [formData, setFormData] = useState({
     id: "",
     SuscripcionId: "",
@@ -97,6 +113,7 @@ export default function SuscripcionesList({
     PlanId: "",
     SuscripcionFechaInicio: "",
     SuscripcionFechaFin: "",
+    SuscripcionClasesRestantes: "" as string | number,
   });
   const { user } = useAuth();
   const {
@@ -136,6 +153,8 @@ export default function SuscripcionesList({
         PlanId: String(currentSuscripcion.PlanId),
         SuscripcionFechaInicio: fechaInicio,
         SuscripcionFechaFin: fechaFin,
+        SuscripcionClasesRestantes:
+          currentSuscripcion.SuscripcionClasesRestantes ?? "",
       });
     } else if (currentSuscripcion === null && !clienteSeleccionadoRef.current) {
       // Solo resetear cuando currentSuscripcion cambia a null Y no hay cliente seleccionado.
@@ -149,6 +168,7 @@ export default function SuscripcionesList({
         PlanId: "",
         SuscripcionFechaInicio: fechaHoy,
         SuscripcionFechaFin: "",
+        SuscripcionClasesRestantes: "",
       });
     }
     // El hook ya re-sincroniza el cliente seleccionado cuando cambia la lista.
@@ -218,35 +238,10 @@ export default function SuscripcionesList({
 
   const formatDate = (dateString: string) => formatDateLocal(dateString);
 
-  // Función para calcular el estado basándose en las fechas (comparación textual YYYY-MM-DD en local)
-  const calcularEstadoPorFechas = (
-    fechaInicio: string,
-    fechaFin: string
-  ): string => {
-    if (!fechaInicio || !fechaFin) return "CANCELADA";
-    const hoy = todayLocalISO();
-    const inicio = fechaInicio.split("T")[0];
-    const fin = fechaFin.split("T")[0];
-    if (hoy < inicio) return "FUTURA";
-    if (hoy > fin) return "VENCIDA";
-    return "ACTIVA";
-  };
-
-  // Estado de display: si la suscripción está marcada manualmente como
-  // CANCELADA ('C') o SUSPENDIDA ('S'), ese estado prevalece sobre la vigencia
-  // por fechas. Para 'A'/'V'/'F'/'' se recalcula con las fechas (más confiable
-  // que el campo persistido si las fechas cambian sin re-grabar el estado).
-  const getEstadoDisplay = (s: Suscripcion): string => {
-    if (s.SuscripcionEstado === "C") return "CANCELADA";
-    if (s.SuscripcionEstado === "S") return "SUSPENDIDA";
-    return calcularEstadoPorFechas(
-      s.SuscripcionFechaInicio || "",
-      s.SuscripcionFechaFin || ""
-    );
-  };
-
-  const isEstadoManual = (s: Suscripcion): boolean =>
-    s.SuscripcionEstado === "C" || s.SuscripcionEstado === "S";
+  // La lógica vive en utils/suscripcionEstado.ts (compartida con FichaAlumnoPage).
+  const getEstadoDisplay = (s: Suscripcion): EstadoDisplay =>
+    utilGetEstadoDisplay(s);
+  const isEstadoManual = (s: Suscripcion): boolean => utilIsEstadoManual(s);
 
   const columns = [
     { key: "SuscripcionId", label: "ID" },
@@ -261,9 +256,9 @@ export default function SuscripcionesList({
         if (!suscripcion.ClienteId) return nombre;
         return (
           <Link
-            to={`/clientes/${suscripcion.ClienteId}/historial-gimnasio`}
+            to={`/clientes/${suscripcion.ClienteId}/ficha`}
             className="text-blue-600 hover:underline"
-            title="Ver historial del cliente"
+            title="Ver ficha del alumno"
           >
             {nombre}
           </Link>
@@ -328,6 +323,17 @@ export default function SuscripcionesList({
     },
   ];
 
+  // Filtros locales: aplican sobre la página actual (no van al backend para
+  // no encadenar otro round-trip). Si quedara vacío después del filtro, el
+  // empty message lo explica.
+  const filtradas = suscripciones.filter((s) => {
+    if (filtroEstado !== "TODOS" && getEstadoDisplay(s) !== filtroEstado)
+      return false;
+    if (filtroPago === "PAGADA" && s.EstadoPago !== "PAGADA") return false;
+    if (filtroPago === "PENDIENTE" && s.EstadoPago === "PAGADA") return false;
+    return true;
+  });
+
   return (
     <>
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -337,7 +343,7 @@ export default function SuscripcionesList({
             onSearch={onSearch}
             onKeyPress={onKeyPress}
             onSearchSubmit={onSearchSubmit}
-            placeholder="Buscar suscripciones"
+            placeholder="Buscar por cliente, RUC, plan o ID"
           />
         </div>
         <div className="py-4">
@@ -350,15 +356,51 @@ export default function SuscripcionesList({
           )}
         </div>
       </div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
         <div className="text-sm text-gray-600">
-          Mostrando {suscripciones.length} de {pagination?.totalItems}{" "}
-          suscripciones
+          Mostrando {filtradas.length}
+          {filtradas.length !== suscripciones.length
+            ? ` de ${suscripciones.length} cargadas`
+            : ""}{" "}
+          (total: {pagination?.totalItems})
+        </div>
+        <div className="flex gap-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Estado</label>
+            <select
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
+              value={filtroEstado}
+              onChange={(e) =>
+                setFiltroEstado(e.target.value as EstadoDisplay | "TODOS")
+              }
+            >
+              <option value="TODOS">Todos</option>
+              <option value="ACTIVA">Activa</option>
+              <option value="VENCIDA">Vencida</option>
+              <option value="FUTURA">Futura</option>
+              <option value="CANCELADA">Cancelada</option>
+              <option value="SUSPENDIDA">Suspendida</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Pago</label>
+            <select
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
+              value={filtroPago}
+              onChange={(e) =>
+                setFiltroPago(e.target.value as "TODOS" | "PAGADA" | "PENDIENTE")
+              }
+            >
+              <option value="TODOS">Todos</option>
+              <option value="PAGADA">Pagadas</option>
+              <option value="PENDIENTE">Pendientes</option>
+            </select>
+          </div>
         </div>
       </div>
       <DataTable<Suscripcion>
         columns={columns}
-        data={suscripciones}
+        data={filtradas}
         onEdit={onEdit}
         onDelete={onDelete}
         emptyMessage="No se encontraron suscripciones"
@@ -575,6 +617,52 @@ export default function SuscripcionesList({
                       * El estado se calcula automáticamente según las fechas
                     </p>
                   </div>
+
+                  {/* Cupo de clases — sólo visible cuando el plan elegido es
+                      modalidad CLASES. Permite ajustar el cupo si el operador
+                      cargó mal o necesita acreditarle clases extra al alumno.
+                      Para MENSUAL/OPEN no aplica (no se usa cupo). */}
+                  {(() => {
+                    const planActual = planes.find(
+                      (p) => String(p.PlanId) === String(formData.PlanId)
+                    );
+                    if (
+                      !planActual ||
+                      planActual.PlanModalidad !== "CLASES" ||
+                      !currentSuscripcion
+                    )
+                      return null;
+                    return (
+                      <div className="col-span-6 sm:col-span-3">
+                        <label
+                          htmlFor="SuscripcionClasesRestantes"
+                          className="block mb-2 text-sm font-medium text-gray-900"
+                        >
+                          Clases restantes
+                        </label>
+                        <input
+                          type="number"
+                          name="SuscripcionClasesRestantes"
+                          id="SuscripcionClasesRestantes"
+                          min={0}
+                          max={
+                            (planActual.PlanCantidadClases as number) ?? undefined
+                          }
+                          value={formData.SuscripcionClasesRestantes}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              SuscripcionClasesRestantes: e.target.value,
+                            }))
+                          }
+                          className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Cupo original del plan: {planActual.PlanCantidadClases ?? 0}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">

@@ -23,6 +23,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/modifications/ventas": "Modificaciones de ventas",
   "/modifications/compras": "Modificaciones de compras",
   "/credito-pagos": "Crédito y pagos",
+  "/clientes-con-deuda": "Clientes con deuda",
+  "/cancha/bloqueos": "Bloqueos de cancha",
   "/planes": "Planes",
   "/suscripciones": "Suscripciones",
   "/pagos": "Pagos",
@@ -41,7 +43,9 @@ const ROUTE_TITLES: Record<string, string> = {
 
 // Patrones para rutas dinámicas. Se evalúan en orden si no hubo match exacto.
 const DYNAMIC_TITLES: Array<{ pattern: RegExp; title: string }> = [
-  { pattern: /^\/clientes\/[^/]+\/historial-gimnasio$/, title: "Historial del cliente" },
+  // /historial-gimnasio quedó como redirect a /ficha. Mientras dura el flash
+  // del redirect, mostramos el mismo título para no parpadear.
+  { pattern: /^\/clientes\/[^/]+\/historial-gimnasio$/, title: "Ficha del alumno" },
   { pattern: /^\/clientes\/[^/]+\/ficha$/, title: "Ficha del alumno" },
 ];
 

@@ -9,6 +9,16 @@ const PAGO_TIPOS = {
   TR: { codigo: "TR", label: "Transferencia", tipoGastoGrupoId: 6 },
 };
 
+// Métodos que efectivamente ingresan plata al cajón físico. Sólo estos suman
+// a Caja.CajaMonto cuando se cobra. POS, voucher, transferencia, crédito
+// quedan registrados en planilla pero no mueven el cajón.
+//
+// Compartido entre pago.controller, canchaReserva.controller (cobrar reserva)
+// y canchaCredito.controller (cobrar saldo). Si en el futuro se decide que
+// otro método también ingresa efectivo (p.ej. una "vuelta de POS"), se agrega
+// acá y todos los flujos lo respetan.
+const METODOS_EFECTIVO = new Set(["CO"]);
+
 function getPagoTipo(codigo) {
   return PAGO_TIPOS[codigo] || null;
 }
@@ -21,4 +31,15 @@ function getLabel(codigo) {
   return PAGO_TIPOS[codigo]?.label || codigo;
 }
 
-module.exports = { PAGO_TIPOS, getPagoTipo, getTipoGastoGrupoId, getLabel };
+function esEfectivo(codigo) {
+  return METODOS_EFECTIVO.has(codigo);
+}
+
+module.exports = {
+  PAGO_TIPOS,
+  METODOS_EFECTIVO,
+  getPagoTipo,
+  getTipoGastoGrupoId,
+  getLabel,
+  esEfectivo,
+};

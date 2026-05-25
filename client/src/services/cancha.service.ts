@@ -24,6 +24,9 @@ export interface CanchaReserva {
   CanchaReservaObservacion: string;
   UsuarioId?: string | null;
   CanchaReservaCreadoEn?: string;
+  // Si la reserva fue creada como parte de una serie recurrente, todas las
+  // reservas de la serie comparten este id (== id de la primera reserva).
+  CanchaReservaSerieId?: number | null;
 }
 
 // ---------- Canchas ----------
@@ -207,6 +210,108 @@ export const cobrarReserva = async (
   }
 };
 
+export interface AnularCobroResp {
+  success: true;
+  data: CanchaReserva;
+  anulacion: {
+    movimientosRevertidos: number;
+    efectivoDescontadoDeCaja: number;
+    creditoBorrado: boolean;
+  };
+}
+
+// Anula el cobro de una reserva Pagada. Devuelve cuántos movimientos se
+// revirtieron y cuánto efectivo se sacó de la caja (sólo CO). Si la reserva
+// tenía un crédito sin pagos parciales, se borra; si ya recibió pagos,
+// devuelve 409 CREDITO_CON_PAGOS.
+export const anularCobroReserva = async (id: number): Promise<AnularCobroResp> => {
+  try {
+    const r = await api.post(`/cancha-reservas/${id}/anular-cobro`);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string; code?: string }>;
+    throw ax.response?.data || { message: "Error al anular el cobro" };
+  }
+};
+
+export interface RecurrenteInput {
+  CanchaId: number;
+  ClienteId?: number | null;
+  CanchaReservaCliente?: string;
+  fechaInicio: string; // YYYY-MM-DD (primera ocurrencia)
+  cantidadSemanas: number; // 2..52
+  CanchaReservaHoraInicio: string; // HH:MM
+  CanchaReservaHoraFin: string;
+  CanchaReservaMonto?: number;
+  CanchaReservaObservacion?: string;
+  CanchaReservaEstado?: "R" | "P" | "X";
+}
+
+export interface RecurrenteResp {
+  success: true;
+  serieId: number | null;
+  creadas: number;
+  rechazadas: number;
+  detalle: {
+    creadas: Array<{ id: number; fecha: string }>;
+    rechazadas: Array<{
+      fecha: string;
+      razon: "BLOQUEO" | "CONFLICTO";
+      mensaje: string;
+    }>;
+  };
+}
+
+// Crea una serie de reservas semanales. El backend valida cada fecha contra
+// bloqueos y conflictos individualmente y devuelve el detalle de las que pasaron
+// y las que no — el operador decide qué hacer con las rechazadas.
+export const crearReservaRecurrente = async (
+  data: RecurrenteInput
+): Promise<RecurrenteResp> => {
+  try {
+    const r = await api.post("/cancha-reservas/recurrente", data);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al crear reserva recurrente" };
+  }
+};
+
+export const listarSerie = async (
+  serieId: number
+): Promise<{ data: CanchaReserva[]; serieId: number }> => {
+  try {
+    const r = await api.get(`/cancha-reservas/serie/${serieId}`);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al obtener serie" };
+  }
+};
+
+export interface CancelarSerieResp {
+  success: true;
+  serieId: number;
+  canceladas: number;
+  yaCanceladas: number;
+  conPagadas: Array<{ id: number; fecha: string }>;
+}
+
+// Cancela las reservas R de la serie. Las P quedan (anularlas requiere
+// anular-cobro individual). Devuelve cuántas se cancelaron y cuáles
+// quedaron pagadas.
+export const cancelarSerie = async (
+  serieId: number
+): Promise<CancelarSerieResp> => {
+  try {
+    const r = await api.post(`/cancha-reservas/serie/${serieId}/cancelar`);
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al cancelar la serie" };
+  }
+};
+
 // ---------- Tarifas por banda ----------
 export interface CanchaTarifa {
   CanchaTarifaId: number;
@@ -265,11 +370,21 @@ export const deleteTarifa = async (id: number) => {
   }
 };
 
+export interface SugerirMontoBandaDesglose {
+  CanchaTarifaId: number;
+  nombre: string;
+  precio: number;
+  horas: number;
+}
+
 export interface SugerirMontoResp {
   monto: number;
   duracionHoras: number;
   banda: { CanchaTarifaId: number; nombre: string; precio: number } | null;
-  fuente: "BANDA" | "FLAT_CANCHA" | "SIN_TARIFA";
+  // Sólo viene cuando fuente === "MIXTA": desglose por banda (y opcionalmente
+  // tarifa flat con CanchaTarifaId=0) para mostrar al operador qué se sumó.
+  bandas?: SugerirMontoBandaDesglose[];
+  fuente: "BANDA" | "FLAT_CANCHA" | "SIN_TARIFA" | "MIXTA";
 }
 
 export const sugerirMontoReserva = async (params: {

@@ -2,26 +2,54 @@ const express = require("express");
 const router = express.Router();
 const registroDiarioCajaController = require("../controllers/registrodiariocaja.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
 
-// Aplicar middleware de autenticación a todas las rutas
 router.use(authMiddleware);
 
-// Rutas para registros diarios de caja
-router.get("/", authMiddleware, registroDiarioCajaController.getAll);
-router.get("/search", authMiddleware, registroDiarioCajaController.search);
 router.get(
-  "/estado-apertura",
-  registroDiarioCajaController.estadoAperturaPorUsuario
+  "/",
+  requirePerm("REGISTRODIARIOCAJA", "leer"),
+  registroDiarioCajaController.getAll
 );
-router.get("/rango", authMiddleware, registroDiarioCajaController.getByDateRange);
-router.get("/:id", authMiddleware, registroDiarioCajaController.getById);
-router.post("/", authMiddleware, registroDiarioCajaController.create);
+router.get(
+  "/search",
+  requirePerm("REGISTRODIARIOCAJA", "leer"),
+  registroDiarioCajaController.search
+);
+// estado-apertura es lookup que usan varias pantallas (cobro, ventas, etc.)
+// para chequear si hay caja abierta del usuario actual — no requiere permiso
+// sobre RegistroDiarioCaja, solo autenticación.
+router.get("/estado-apertura", registroDiarioCajaController.estadoAperturaPorUsuario);
+router.get(
+  "/rango",
+  requirePerm("REGISTRODIARIOCAJA", "leer"),
+  registroDiarioCajaController.getByDateRange
+);
+router.get(
+  "/:id",
+  requirePerm("REGISTRODIARIOCAJA", "leer"),
+  registroDiarioCajaController.getById
+);
+router.post(
+  "/",
+  requirePerm("REGISTRODIARIOCAJA", "crear"),
+  registroDiarioCajaController.create
+);
+// Apertura/cierre de caja es el flow del operador, recurso APERTURACAJA.
 router.post(
   "/apertura-cierre",
-  authMiddleware,
+  requirePerm("APERTURACAJA", "leer"),
   registroDiarioCajaController.aperturaCierreCaja
 );
-router.put("/:id", authMiddleware, registroDiarioCajaController.update);
-router.delete("/:id", authMiddleware, registroDiarioCajaController.delete);
+router.put(
+  "/:id",
+  requirePerm("REGISTRODIARIOCAJA", "editar"),
+  registroDiarioCajaController.update
+);
+router.delete(
+  "/:id",
+  requirePerm("REGISTRODIARIOCAJA", "eliminar"),
+  registroDiarioCajaController.delete
+);
 
 module.exports = router;

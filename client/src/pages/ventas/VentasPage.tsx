@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePermiso } from "../../hooks/usePermiso";
 import {
   getVentasPaginated,
@@ -29,6 +30,7 @@ interface Pagination {
 }
 
 export default function VentasPage() {
+  const navigate = useNavigate();
   const [ventasData, setVentasData] = useState<{
     ventas: Venta[];
     pagination: Pagination;
@@ -362,10 +364,9 @@ export default function VentasPage() {
     setCurrentPage(1);
   };
 
-  const handleCreateVenta = () => {
-    // Implementar la lógica para crear una nueva venta
-    console.log("Crear nueva venta");
-  };
+  // El botón "Nueva venta" navega al POS de cantina (`/ventas/nueva` está
+  // pendiente, hoy el flujo de creación vive en Sales/Dashboard).
+  const handleCreateVenta = () => navigate("/ventas");
 
   if (!puedeLeer) return <PermissionDenied resource="las ventas" />;
   if (loading) return <LoadingState message="Cargando ventas..." />;

@@ -101,13 +101,30 @@ const Suscripcion = {
           suscripcionData.SuscripcionFechaInicio,
           suscripcionData.SuscripcionFechaFin
         );
-      const query = `UPDATE suscripcion SET ClienteId = ?, PlanId = ?, SuscripcionFechaInicio = ?, SuscripcionFechaFin = ?, SuscripcionEstado = ? WHERE SuscripcionId = ?`;
+      // SuscripcionClasesRestantes ahora es editable. Si llega `undefined`
+      // (formularios que no lo manejan), usamos COALESCE en SQL para no
+      // sobrescribir el cupo existente con NULL. Si llega un número, se
+      // respeta (permite al operador corregir errores de carga).
+      const clasesParam =
+        suscripcionData.SuscripcionClasesRestantes === undefined
+          ? null
+          : Number(suscripcionData.SuscripcionClasesRestantes);
+      const query = `
+        UPDATE suscripcion
+        SET ClienteId = ?,
+            PlanId = ?,
+            SuscripcionFechaInicio = ?,
+            SuscripcionFechaFin = ?,
+            SuscripcionEstado = ?,
+            SuscripcionClasesRestantes = COALESCE(?, SuscripcionClasesRestantes)
+        WHERE SuscripcionId = ?`;
       const values = [
         suscripcionData.ClienteId,
         suscripcionData.PlanId,
         suscripcionData.SuscripcionFechaInicio,
         suscripcionData.SuscripcionFechaFin,
         estado,
+        clasesParam,
         id,
       ];
       db.query(query, values, (err, result) => {
@@ -239,6 +256,9 @@ const Suscripcion = {
         orderByField = `s.${sortField}`;
       }
 
+      // El operador de mostrador busca por cédula/RUC casi siempre. Agregamos
+      // ClienteRUC al OR para evitar tener que ir a Clientes primero a buscar
+      // por nombre + copiar el ID.
       const searchQuery = `
         SELECT s.*,
           c.ClienteNombre, c.ClienteApellido,
@@ -257,6 +277,7 @@ const Suscripcion = {
         ) pg ON pg.SuscripcionId = s.SuscripcionId
         WHERE c.ClienteNombre LIKE ?
         OR c.ClienteApellido LIKE ?
+        OR c.ClienteRUC LIKE ?
         OR p.PlanNombre LIKE ?
         OR CAST(s.SuscripcionId AS CHAR) LIKE ?
         ORDER BY ${orderByField} ${order}
@@ -266,23 +287,38 @@ const Suscripcion = {
 
       db.query(
         searchQuery,
-        [searchValue, searchValue, searchValue, searchValue, limit, offset],
+        [
+          searchValue,
+          searchValue,
+          searchValue,
+          searchValue,
+          searchValue,
+          limit,
+          offset,
+        ],
         (err, results) => {
           if (err) return reject(err);
 
           const countQuery = `
-            SELECT COUNT(*) as total 
+            SELECT COUNT(*) as total
             FROM suscripcion s
             LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
             LEFT JOIN plan p ON s.PlanId = p.PlanId
             WHERE c.ClienteNombre LIKE ?
             OR c.ClienteApellido LIKE ?
+            OR c.ClienteRUC LIKE ?
             OR p.PlanNombre LIKE ?
             OR CAST(s.SuscripcionId AS CHAR) LIKE ?
           `;
           db.query(
             countQuery,
-            [searchValue, searchValue, searchValue, searchValue],
+            [
+              searchValue,
+              searchValue,
+              searchValue,
+              searchValue,
+              searchValue,
+            ],
             (err, countResult) => {
               if (err) return reject(err);
               resolve({

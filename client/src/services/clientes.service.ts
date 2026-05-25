@@ -119,3 +119,39 @@ export const getAllClientesSinPaginacion = async () => {
     );
   }
 };
+
+export interface ClienteConDeuda {
+  ClienteId: number;
+  ClienteNombre: string;
+  ClienteApellido: string;
+  ClienteRUC?: string;
+  ClienteTelefono?: string;
+  saldoGimnasio: number;
+  cantGimnasio: number;
+  saldoVentas: number;
+  cantVentas: number;
+  saldoCancha: number;
+  cantCancha: number;
+  saldoTotal: number;
+}
+
+export interface ClientesConDeudaResp {
+  data: ClienteConDeuda[];
+  totales: {
+    gimnasio: number;
+    ventas: number;
+    cancha: number;
+    total: number;
+  };
+  cantidadClientes: number;
+}
+
+export const getClientesConDeuda = async (): Promise<ClientesConDeudaResp> => {
+  try {
+    const r = await api.get("/clientes/con-deuda");
+    return r.data;
+  } catch (e) {
+    const ax = e as AxiosError<{ message?: string }>;
+    throw ax.response?.data || { message: "Error al obtener clientes con deuda" };
+  }
+};

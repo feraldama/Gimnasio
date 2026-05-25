@@ -1,13 +1,16 @@
 const CanchaCredito = require("../models/canchaCredito.model");
 const db = require("../config/db");
 const { sendError } = require("../utils/errors");
-const { PAGO_TIPOS, getLabel } = require("../constants/pagoTipos");
+const {
+  PAGO_TIPOS,
+  METODOS_EFECTIVO,
+  getLabel,
+} = require("../constants/pagoTipos");
 
 // Mismo grupo COBRO CANCHA (7) que usa el cobro inicial de reserva, para que
 // los reportes que filtran por TipoGastoGrupoId=7 cuenten también los pagos
 // posteriores de cuotas pendientes. El método queda en el detalle.
 const TIPO_GASTO_GRUPO_COBRO_CANCHA = 7;
-const METODOS_EFECTIVO = new Set(["CO"]);
 
 // Lista créditos con saldo > 0 de un cliente. Llamado desde /credito-pagos
 // en el tab "Cancha".
@@ -71,8 +74,11 @@ exports.cobrarCredito = async (req, res) => {
   try {
     await connection.beginTransaction();
 
+    // FOR UPDATE bloquea la fila hasta el commit. Sin esto, dos POST
+    // simultáneos contra el mismo crédito ambos leen el saldo entero, ambos
+    // pasan la validación `MONTO_EXCEDE`, y el saldo final queda negativo.
     const [creditoRows] = await connection.query(
-      "SELECT * FROM cancha_credito WHERE CanchaCreditoId = ?",
+      "SELECT * FROM cancha_credito WHERE CanchaCreditoId = ? FOR UPDATE",
       [creditoId]
     );
     if (creditoRows.length === 0) {

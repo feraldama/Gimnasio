@@ -78,12 +78,7 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         data.data.map(async (venta: Venta) => {
           try {
             const cliente = await getClienteById(venta.ClienteId);
-            console.log(
-              `Cliente cargado para venta ${venta.VentaId}:`,
-              cliente
-            );
-
-            const ventaEnriquecida = {
+            return {
               ...venta,
               ClienteRazonSocial:
                 cliente.ClienteRazonSocial ||
@@ -93,12 +88,6 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               ClienteTelefono: cliente.ClienteTelefono || "",
               ClienteDireccion: cliente.ClienteDireccion || "",
             };
-
-            console.log(
-              `Venta enriquecida ${venta.VentaId}:`,
-              ventaEnriquecida
-            );
-            return ventaEnriquecida;
           } catch (error) {
             console.error(`Error al cargar cliente ${venta.ClienteId}:`, error);
             return {
@@ -144,18 +133,9 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const cargarProductosVenta = async (venta: VentaCompleta) => {
     try {
-      console.log("Cargando productos para venta:", venta);
       const productos = await getProductosByVentaId(venta.VentaId);
-      console.log("Productos cargados:", productos);
-
       // Los productos ya vienen con la descripción del JOIN en el backend
-      const ventaCompleta = {
-        ...venta,
-        VentaProductos: productos,
-      };
-
-      console.log("Venta completa con productos:", ventaCompleta);
-      setVentaSeleccionada(ventaCompleta);
+      setVentaSeleccionada({ ...venta, VentaProductos: productos });
     } catch (error) {
       console.error("Error al cargar productos:", error);
       Swal.fire(
@@ -196,11 +176,6 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       return;
     }
 
-    // Debug: mostrar los datos de la venta seleccionada
-    console.log("Venta seleccionada para imprimir:", ventaSeleccionada);
-    console.log("Productos de la venta:", ventaSeleccionada.VentaProductos);
-
-    // Crear el contenido de la factura
     const contenidoFactura = generarContenidoFactura(ventaSeleccionada);
 
     // Abrir ventana de impresión

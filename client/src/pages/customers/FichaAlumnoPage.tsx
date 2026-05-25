@@ -23,7 +23,8 @@ import {
   PermissionDenied,
 } from "../../components/common/ui";
 import { usePermiso } from "../../hooks/usePermiso";
-import { formatDateLocal, formatMiles, todayLocalISO } from "../../utils/utils";
+import { formatDateLocal, formatMiles } from "../../utils/utils";
+import { getEstadoDisplay } from "../../utils/suscripcionEstado";
 import { getPagoTipoLabel } from "../../constants/pagoTipos";
 
 interface Cliente {
@@ -63,16 +64,14 @@ interface Pago {
 
 type TabKey = "datos" | "suscripciones" | "pagos" | "asistencias" | "deuda";
 
+// Reexporta el cálculo centralizado para mantener compatibilidad con el
+// resto del archivo. Falta de fechas se mapea a "—" porque acá lo mostramos
+// como label visual (no como estado funcional).
 const calcularVigencia = (s: Suscripcion): string => {
   if (s.SuscripcionEstado === "C") return "CANCELADA";
   if (s.SuscripcionEstado === "S") return "SUSPENDIDA";
   if (!s.SuscripcionFechaInicio || !s.SuscripcionFechaFin) return "—";
-  const hoy = todayLocalISO();
-  const i = s.SuscripcionFechaInicio.split("T")[0];
-  const f = s.SuscripcionFechaFin.split("T")[0];
-  if (hoy < i) return "FUTURA";
-  if (hoy > f) return "VENCIDA";
-  return "ACTIVA";
+  return getEstadoDisplay(s);
 };
 
 const vigenciaTone: Record<string, "neutral" | "success" | "warning" | "danger" | "info"> = {

@@ -76,6 +76,7 @@ const navigation: NavigationItem[] = [
       { name: "Reservas", href: "/cancha" },
       { name: "Catálogo", href: "/canchas" },
       { name: "Tarifas", href: "/cancha/tarifas" },
+      { name: "Bloqueos", href: "/cancha/bloqueos" },
     ],
   },
   {
@@ -111,6 +112,7 @@ const navigation: NavigationItem[] = [
     icon: <BanknotesIcon className="h-7 w-6" />,
     children: [
       { name: "Registro Diario Caja", href: "/movements/summary" },
+      { name: "Clientes con deuda", href: "/clientes-con-deuda" },
       { name: "Cajas", href: "/movements/cajas" },
       { name: "Tipos de Gasto", href: "/movements/tiposgasto" },
     ],

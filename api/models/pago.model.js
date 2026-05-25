@@ -248,13 +248,19 @@ Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia") => {
     };
     const groupExpr = agrupaciones[agruparPor] || agrupaciones.dia;
 
+    // Desglose por los 5 métodos de pago soportados (CO/PO/VO/TR/CR). Hasta
+    // antes faltaban Voucher y Crédito, así que `total` incluía esos pero las
+    // columnas no — y los totales del reporte no cuadraban con la suma de
+    // los desgloses visibles.
     const query = `
       SELECT
         ${groupExpr} AS periodo,
         COUNT(*) AS cantidad,
         SUM(CASE WHEN p.PagoTipo = 'CO' THEN p.PagoMonto ELSE 0 END) AS contado,
         SUM(CASE WHEN p.PagoTipo = 'PO' THEN p.PagoMonto ELSE 0 END) AS pos,
+        SUM(CASE WHEN p.PagoTipo = 'VO' THEN p.PagoMonto ELSE 0 END) AS voucher,
         SUM(CASE WHEN p.PagoTipo = 'TR' THEN p.PagoMonto ELSE 0 END) AS transferencia,
+        SUM(CASE WHEN p.PagoTipo = 'CR' THEN p.PagoMonto ELSE 0 END) AS credito,
         SUM(p.PagoMonto) AS total
       FROM pago p
       WHERE DATE(p.PagoFecha) >= DATE(?) AND DATE(p.PagoFecha) <= DATE(?)
@@ -269,12 +275,22 @@ Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia") => {
         (acc, r) => {
           acc.contado += Number(r.contado || 0);
           acc.pos += Number(r.pos || 0);
+          acc.voucher += Number(r.voucher || 0);
           acc.transferencia += Number(r.transferencia || 0);
+          acc.credito += Number(r.credito || 0);
           acc.total += Number(r.total || 0);
           acc.cantidad += Number(r.cantidad || 0);
           return acc;
         },
-        { contado: 0, pos: 0, transferencia: 0, total: 0, cantidad: 0 }
+        {
+          contado: 0,
+          pos: 0,
+          voucher: 0,
+          transferencia: 0,
+          credito: 0,
+          total: 0,
+          cantidad: 0,
+        }
       );
       resolve({ filas: results, totales: totalGeneral });
     });

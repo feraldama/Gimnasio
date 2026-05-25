@@ -2,35 +2,38 @@ const express = require("express");
 const router = express.Router();
 const suscripcionController = require("../controllers/suscripcion.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
 
-// Aplicar middleware de autenticación a todas las rutas
 router.use(authMiddleware);
 
-// Rutas para Suscripcion
 router.get(
   "/search",
-  authMiddleware,
+  requirePerm("SUSCRIPCIONES", "leer"),
   suscripcionController.searchSuscripciones
 );
 router.get(
   "/proximas-a-vencer",
-  authMiddleware,
+  requirePerm("SUSCRIPCIONES", "leer"),
   suscripcionController.getProximasAVencer
 );
 router.get(
   "/sin-paginacion",
-  authMiddleware,
+  requirePerm("SUSCRIPCIONES", "leer"),
   suscripcionController.getAllSinPaginacion
 );
 router.get(
   "/cliente/:clienteId",
-  authMiddleware,
+  requirePerm("SUSCRIPCIONES", "leer"),
   suscripcionController.getByClienteId
 );
-router.get("/", authMiddleware, suscripcionController.getAll);
-router.get("/:id", authMiddleware, suscripcionController.getById);
-router.post("/", authMiddleware, suscripcionController.create);
-router.put("/:id", authMiddleware, suscripcionController.update);
-router.delete("/:id", authMiddleware, suscripcionController.delete);
+router.get("/", requirePerm("SUSCRIPCIONES", "leer"), suscripcionController.getAll);
+router.get("/:id", requirePerm("SUSCRIPCIONES", "leer"), suscripcionController.getById);
+router.post("/", requirePerm("SUSCRIPCIONES", "crear"), suscripcionController.create);
+router.put("/:id", requirePerm("SUSCRIPCIONES", "editar"), suscripcionController.update);
+router.delete(
+  "/:id",
+  requirePerm("SUSCRIPCIONES", "eliminar"),
+  suscripcionController.delete
+);
 
 module.exports = router;

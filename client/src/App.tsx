@@ -3,6 +3,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useParams,
 } from "react-router-dom";
 import "./App.css";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -26,6 +27,7 @@ import MenusPage from "./pages/menus/MenusPage";
 import ProductsPage from "./pages/products/ProductsPage";
 import VentasPage from "./pages/ventas/VentasPage";
 import CreditoPagosPage from "./pages/ventas/CreditoPagosPage";
+import ClientesConDeudaPage from "./pages/ventas/ClientesConDeudaPage";
 import ReportesPage from "./pages/dashboard/ReportesPage";
 import FacturasPage from "./pages/facturas/FacturasPage";
 import Compras from "./pages/compras/Compras";
@@ -36,16 +38,26 @@ import SuscripcionesPage from "./pages/suscripciones/SuscripcionesPage";
 import PlanesPage from "./pages/planes/PlanesPage";
 import PagosPage from "./pages/pagos/PagosPage";
 import ReporteCobranzaPage from "./pages/pagos/ReporteCobranzaPage";
-import HistorialClientePage from "./pages/suscripciones/HistorialClientePage";
+// HistorialClientePage fue deprecado a favor de FichaAlumnoPage (más completa).
+// La ruta vieja sigue respondiendo con un redirect — ver más abajo.
 import AsistenciaPage from "./pages/asistencia/AsistenciaPage";
 import ConfiguracionPage from "./pages/configuracion/ConfiguracionPage";
 import CanchaPage from "./pages/cancha/CanchaPage";
 import CanchasAdminPage from "./pages/cancha/CanchasAdminPage";
 import CanchaCalendarioPage from "./pages/cancha/CanchaCalendarioPage";
 import CanchaTarifasPage from "./pages/cancha/CanchaTarifasPage";
+import CanchaBloqueosPage from "./pages/cancha/CanchaBloqueosPage";
 import ReportesGraficosPage from "./pages/dashboard/ReportesGraficosPage";
 import FichaAlumnoPage from "./pages/customers/FichaAlumnoPage";
 import KioskoAsistenciaPage from "./pages/asistencia/KioskoAsistenciaPage";
+
+// Redirect 301-style para la URL legacy /clientes/:id/historial-gimnasio →
+// /clientes/:id/ficha. Mantenemos la ruta para no romper bookmarks ni links
+// generados por reportes/PDFs viejos.
+function NavigateToFicha() {
+  const { id } = useParams();
+  return <Navigate to={`/clientes/${id}/ficha`} replace />;
+}
 
 function App() {
   return (
@@ -119,6 +131,10 @@ function App() {
             <Route path="/modifications/ventas" element={<VentasPage />} />
             <Route path="/modifications/compras" element={<ComprasPage />} />
             <Route path="/credito-pagos" element={<CreditoPagosPage />} />
+            <Route
+              path="/clientes-con-deuda"
+              element={<ClientesConDeudaPage />}
+            />
             <Route path="/reportes" element={<ReportesPage />} />
             <Route path="/facturas" element={<FacturasPage />} />
             <Route path="/planes" element={<PlanesPage />} />
@@ -128,9 +144,11 @@ function App() {
               path="/reporte-cobranza"
               element={<ReporteCobranzaPage />}
             />
+            {/* Compat: redirige a la ficha completa, que ya muestra todo lo
+                que mostraba HistorialClientePage y más (asistencias, deuda). */}
             <Route
               path="/clientes/:id/historial-gimnasio"
-              element={<HistorialClientePage />}
+              element={<NavigateToFicha />}
             />
             <Route path="/asistencia" element={<AsistenciaPage />} />
             <Route path="/configuracion" element={<ConfiguracionPage />} />
@@ -141,6 +159,10 @@ function App() {
               element={<CanchaCalendarioPage />}
             />
             <Route path="/cancha/tarifas" element={<CanchaTarifasPage />} />
+            <Route
+              path="/cancha/bloqueos"
+              element={<CanchaBloqueosPage />}
+            />
             <Route
               path="/reportes-graficos"
               element={<ReportesGraficosPage />}

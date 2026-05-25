@@ -2,20 +2,62 @@ const express = require("express");
 const router = express.Router();
 const compraController = require("../controllers/compra.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
 
-// Rutas protegidas (requieren autenticación)
-router.get("/", authMiddleware, compraController.getAllCompras);
-router.get("/all", authMiddleware, compraController.getAllComprasSinPaginacion);
-router.get("/search", authMiddleware, compraController.searchCompras);
-router.post("/confirmar", authMiddleware, compraController.confirmar);
-router.get("/:id", authMiddleware, compraController.getCompraById);
+router.get(
+  "/",
+  authMiddleware,
+  requirePerm("COMPRAS", "leer"),
+  compraController.getAllCompras
+);
+router.get(
+  "/all",
+  authMiddleware,
+  requirePerm("COMPRAS", "leer"),
+  compraController.getAllComprasSinPaginacion
+);
+router.get(
+  "/search",
+  authMiddleware,
+  requirePerm("COMPRAS", "leer"),
+  compraController.searchCompras
+);
+// Pantalla "Nueva compra" usa su propio recurso (NUEVACOMPRA en frontend).
+router.post(
+  "/confirmar",
+  authMiddleware,
+  requirePerm("NUEVACOMPRA", "leer"),
+  compraController.confirmar
+);
+router.get(
+  "/:id",
+  authMiddleware,
+  requirePerm("COMPRAS", "leer"),
+  compraController.getCompraById
+);
 router.get(
   "/:id/productos",
   authMiddleware,
+  requirePerm("COMPRAS", "leer"),
   compraController.getProductosByCompraId
 );
-router.post("/", authMiddleware, compraController.createCompra);
-router.put("/:id", authMiddleware, compraController.updateCompra);
-router.delete("/:id", authMiddleware, compraController.deleteCompra);
+router.post(
+  "/",
+  authMiddleware,
+  requirePerm("COMPRAS", "crear"),
+  compraController.createCompra
+);
+router.put(
+  "/:id",
+  authMiddleware,
+  requirePerm("COMPRAS", "editar"),
+  compraController.updateCompra
+);
+router.delete(
+  "/:id",
+  authMiddleware,
+  requirePerm("COMPRAS", "eliminar"),
+  compraController.deleteCompra
+);
 
 module.exports = router;

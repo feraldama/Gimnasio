@@ -8,5 +8,6 @@ router.get("/cancha/diario", authMiddleware, ctrl.canchaDiario);
 router.get("/cancha/desglose", authMiddleware, ctrl.canchaDesglose);
 router.get("/cancha/heatmap", authMiddleware, ctrl.canchaHeatmap);
 router.get("/cantina/diario", authMiddleware, ctrl.cantinaDiario);
+router.get("/dashboard/gimnasio-kpis", authMiddleware, ctrl.dashboardGimnasioKpis);
 
 module.exports = router;

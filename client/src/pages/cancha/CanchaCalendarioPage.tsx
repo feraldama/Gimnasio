@@ -20,6 +20,10 @@ import {
   getReporteCanchaHeatmap,
   type ReporteHeatmapResponse,
 } from "../../services/reportes.service";
+import {
+  listBloqueos,
+  type CanchaBloqueo,
+} from "../../services/canchaBloqueo.service";
 import { usePermiso } from "../../hooks/usePermiso";
 import {
   Button,
@@ -168,6 +172,9 @@ export default function CanchaCalendarioPage() {
   const [reservasMes, setReservasMes] = useState<Record<string, CanchaReserva[]>>(
     {}
   );
+  // Bloqueos del rango visible. Para vista día/semana se filtran al renderizar
+  // cada slot; para vista mes se cuentan por día.
+  const [bloqueos, setBloqueos] = useState<CanchaBloqueo[]>([]);
   const [clientes, setClientes] = useState<ClienteOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -265,17 +272,86 @@ export default function CanchaCalendarioPage() {
     return "bg-amber-300";
   };
 
+  // ¿Hay un bloqueo aplicable a (cancha, fechaISO, hora-slot)? Devuelve el
+  // primer match o null. Un bloqueo aplica cuando:
+  //   - la fecha del bloqueo coincide
+  //   - su canchaid es NULL (todas) o coincide con la cancha consultada
+  //   - sus horas son NULL (todo el día) o el slot HH:MM cae dentro del rango
+  //
+  // `horaSlotMin` se compara contra los `HH:MM:SS` de la columna TIME en
+  // minutos desde medianoche, igual que hace el backend en verificarBloqueoTx.
+  const bloqueoEnSlot = (
+    canchaId: number,
+    fechaISO: string,
+    horaSlotMin: number
+  ): CanchaBloqueo | null => {
+    for (const b of bloqueos) {
+      const bFecha = String(b.CanchaBloqueoFecha).slice(0, 10);
+      if (bFecha !== fechaISO) continue;
+      if (b.CanchaId != null && b.CanchaId !== canchaId) continue;
+      // Todo el día (cualquier hora con NULL)
+      if (!b.CanchaBloqueoHoraDesde || !b.CanchaBloqueoHoraHasta) return b;
+      const [hd, md] = String(b.CanchaBloqueoHoraDesde).split(":").map(Number);
+      const [hh, mh] = String(b.CanchaBloqueoHoraHasta).split(":").map(Number);
+      const bd = hd * 60 + (md || 0);
+      const bh = hh * 60 + (mh || 0);
+      // slot dura 30 min: solape si bd < (slot+30) y bh > slot.
+      if (bd < horaSlotMin + 30 && bh > horaSlotMin) return b;
+    }
+    return null;
+  };
+
+  // Cuenta cuántos bloqueos hay en una fecha (para mostrar badge en vista mes).
+  const cantBloqueosDelDia = (fechaISO: string): number => {
+    return bloqueos.filter(
+      (b) => String(b.CanchaBloqueoFecha).slice(0, 10) === fechaISO
+    ).length;
+  };
+
+  const hhmmDeBloqueo = (b: CanchaBloqueo): string => {
+    if (!b.CanchaBloqueoHoraDesde || !b.CanchaBloqueoHoraHasta) return "Todo el día";
+    return `${String(b.CanchaBloqueoHoraDesde).slice(0, 5)} — ${String(b.CanchaBloqueoHoraHasta).slice(0, 5)}`;
+  };
+
+  // Click en un slot bloqueado: aviso informativo sin abrir el modal de reserva.
+  const handleClickBloqueado = (b: CanchaBloqueo) => {
+    Swal.fire({
+      icon: "info",
+      title: "Slot bloqueado",
+      html: `
+        <div class="text-sm text-left">
+          <p><strong>${b.CanchaBloqueoMotivo || "Sin motivo"}</strong></p>
+          <p class="text-gray-500 mt-1">${hhmmDeBloqueo(b)}</p>
+        </div>
+      `,
+      confirmButtonText: "Cerrar",
+    });
+  };
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const cR = await getCanchasActivas();
       setCanchas(cR.data);
+
+      // Calcular rango de bloqueos según la vista (mismo rango que las reservas).
+      let bloqueosDesde = fecha;
+      let bloqueosHasta = fecha;
+      if (vista === "semana" && fechasSemana.length > 0) {
+        bloqueosDesde = fechasSemana[0];
+        bloqueosHasta = fechasSemana[fechasSemana.length - 1];
+      } else if (vista === "mes" && fechasMes.length > 0) {
+        bloqueosDesde = fechasMes[0];
+        bloqueosHasta = fechasMes[fechasMes.length - 1];
+      }
+      // Bloqueos en paralelo con reservas — independientes entre sí.
+      const bloqueosPromise = listBloqueos(bloqueosDesde, bloqueosHasta);
+
       if (vista === "dia") {
         const rR = await getReservasPorFecha(fecha);
         setReservas(rR.data);
       } else if (vista === "semana") {
-        // Vista semana: 7 fetches en paralelo, indexamos por fecha.
         const respuestas = await Promise.all(
           fechasSemana.map((f) => getReservasPorFecha(f))
         );
@@ -285,7 +361,6 @@ export default function CanchaCalendarioPage() {
         });
         setReservasSemana(map);
       } else {
-        // Vista mes: una sola query por rango y bucketing en el frontend.
         const desde = fechasMes[0];
         const hasta = fechasMes[fechasMes.length - 1];
         const r = await getReservasPorRango(desde, hasta);
@@ -297,6 +372,8 @@ export default function CanchaCalendarioPage() {
         }
         setReservasMes(map);
       }
+      const bR = await bloqueosPromise;
+      setBloqueos(bR.data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cargar el calendario");
     } finally {
@@ -504,6 +581,7 @@ export default function CanchaCalendarioPage() {
       CanchaReservaMonto: r.CanchaReservaMonto || 0,
       CanchaReservaEstado: r.CanchaReservaEstado || "R",
       CanchaReservaObservacion: r.CanchaReservaObservacion || "",
+      CanchaReservaSerieId: r.CanchaReservaSerieId ?? null,
     });
     setModalOpen(true);
   };
@@ -686,7 +764,7 @@ export default function CanchaCalendarioPage() {
               </label>
             )}
 
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-3 text-xs flex-wrap">
               {Object.entries(ESTADO_LABELS).map(([k, v]) => (
                 <div key={k} className="flex items-center gap-1.5">
                   <span
@@ -695,6 +773,12 @@ export default function CanchaCalendarioPage() {
                   <span className="text-gray-600">{v.label}</span>
                 </div>
               ))}
+              {bloqueos.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded bg-gray-300 border border-gray-400" />
+                  <span className="text-gray-600">Bloqueada</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -762,6 +846,24 @@ export default function CanchaCalendarioPage() {
                     const esMediaHora = s % 2 === 1;
                     const hora = horaInicio + Math.floor(s / 2);
                     const hmBg = heatmapBgClass(diaSem, hora);
+                    // Comparar bloqueo en minutos desde medianoche.
+                    const slotMin = hora * 60 + (esMediaHora ? 30 : 0);
+                    const bloqueo = bloqueoEnSlot(c.CanchaId, fecha, slotMin);
+                    if (bloqueo) {
+                      return (
+                        <div
+                          key={`slot-${ci}-${s}`}
+                          style={{ gridColumn: ci + 2, gridRow: s + 2 }}
+                          className={`bg-gray-300 border-r border-gray-300 cursor-not-allowed ${
+                            esMediaHora
+                              ? "border-b border-dashed border-gray-200"
+                              : "border-b border-gray-300"
+                          }`}
+                          onClick={() => handleClickBloqueado(bloqueo)}
+                          title={`🚫 Bloqueado: ${bloqueo.CanchaBloqueoMotivo || "Sin motivo"} (${hhmmDeBloqueo(bloqueo)})`}
+                        />
+                      );
+                    }
                     return (
                       <div
                         key={`slot-${ci}-${s}`}
@@ -944,6 +1046,25 @@ export default function CanchaCalendarioPage() {
                     );
                     const hora = horaInicio + Math.floor(s / 2);
                     const hmBg = heatmapBgClass(diaSem, hora);
+                    const slotMin = hora * 60 + (esMediaHora ? 30 : 0);
+                    const bloqueo = canchaSel
+                      ? bloqueoEnSlot(canchaSel.CanchaId, f, slotMin)
+                      : null;
+                    if (bloqueo) {
+                      return (
+                        <div
+                          key={`wslot-${di}-${s}`}
+                          style={{ gridColumn: di + 2, gridRow: s + 2 }}
+                          className={`bg-gray-300 border-r border-gray-300 cursor-not-allowed ${
+                            esMediaHora
+                              ? "border-b border-dashed border-gray-200"
+                              : "border-b border-gray-300"
+                          }`}
+                          onClick={() => handleClickBloqueado(bloqueo)}
+                          title={`🚫 ${bloqueo.CanchaBloqueoMotivo || "Bloqueado"} (${hhmmDeBloqueo(bloqueo)})`}
+                        />
+                      );
+                    }
                     return (
                       <div
                         key={`wslot-${di}-${s}`}
@@ -1113,6 +1234,16 @@ export default function CanchaCalendarioPage() {
                         )}
                       </div>
                     )}
+                    {/* Badge si el día tiene bloqueos */}
+                    {(() => {
+                      const nb = cantBloqueosDelDia(f);
+                      if (nb === 0) return null;
+                      return (
+                        <div className="text-[10px] text-gray-700 mt-1">
+                          🚫 {nb} bloqueo{nb === 1 ? "" : "s"}
+                        </div>
+                      );
+                    })()}
                   </button>
                 );
               })}

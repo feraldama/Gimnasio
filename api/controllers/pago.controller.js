@@ -1,7 +1,7 @@
 const Pago = require("../models/pago.model");
 const db = require("../config/db");
 const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
-const { getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
+const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
 
 exports.getAll = async (req, res) => {
@@ -62,17 +62,20 @@ exports.createLote = async (req, res) => {
   const usuarioId = req.user.id;
   const pagos = req.body.pagos;
 
-  // Validación previa (sin tocar BD): todos los pagos deben tener monto > 0 y tipo
+  // Validación previa (sin tocar BD): todos los pagos deben tener monto > 0
+  // y un PagoTipo del catálogo (CO/CR/PO/VO/TR). El check estricto contra
+  // PAGO_TIPOS impide que llegue "XX" o algo inventado desde el cliente.
   for (const p of pagos) {
-    if (!p.PagoMonto || Number(p.PagoMonto) <= 0) {
+    const monto = Number(p.PagoMonto);
+    if (!Number.isFinite(monto) || monto <= 0) {
       return res
         .status(400)
         .json({ message: "Todos los pagos deben tener un monto mayor a cero" });
     }
-    if (!p.PagoTipo) {
-      return res
-        .status(400)
-        .json({ message: "Todos los pagos deben tener un tipo" });
+    if (!p.PagoTipo || !PAGO_TIPOS[p.PagoTipo]) {
+      return res.status(400).json({
+        message: `PagoTipo inválido: ${p.PagoTipo ?? "(vacío)"}`,
+      });
     }
   }
 
@@ -85,8 +88,11 @@ exports.createLote = async (req, res) => {
       !suscripcionId && req.body.ClienteId && req.body.PlanId;
 
     if (crearSuscripcion) {
+      // Traer también modalidad + cupo de clases. Sin esto, una renovación
+      // de plan CLASES dejaba SuscripcionClasesRestantes en 0 (default) y el
+      // alumno no podía entrar al gym aunque acabase de pagar.
       const [planRows] = await connection.query(
-        "SELECT PlanDuracion FROM plan WHERE PlanId = ?",
+        "SELECT PlanDuracion, PlanModalidad, PlanCantidadClases FROM plan WHERE PlanId = ?",
         [req.body.PlanId]
       );
       if (planRows.length === 0) {
@@ -105,14 +111,21 @@ exports.createLote = async (req, res) => {
         fechaFin = addDaysLocal(fechaInicio, plan.PlanDuracion || 30);
       }
 
+      // Cupo: sólo aplica a modalidad CLASES; para MENSUAL/OPEN queda 0.
+      const clasesRestantes =
+        plan.PlanModalidad === "CLASES" ? plan.PlanCantidadClases || 0 : 0;
+
       const [suscResult] = await connection.query(
-        "INSERT INTO suscripcion (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado) VALUES (?, ?, ?, ?, ?)",
+        `INSERT INTO suscripcion
+         (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado, SuscripcionClasesRestantes)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           req.body.ClienteId,
           req.body.PlanId,
           fechaInicio,
           fechaFin,
           calcularEstadoPorFechas(fechaInicio, fechaFin),
+          clasesRestantes,
         ]
       );
       suscripcionId = suscResult.insertId;
@@ -233,8 +246,10 @@ exports.create = async (req, res) => {
       !suscripcionId && req.body.ClienteId && req.body.PlanId;
 
     if (crearSuscripcion) {
+      // Mismo tratamiento que createLote: incluir modalidad + cupo para
+      // que la renovación CLASES quede con cupo poblado, no en 0.
       const [planRows] = await connection.query(
-        "SELECT PlanDuracion FROM plan WHERE PlanId = ?",
+        "SELECT PlanDuracion, PlanModalidad, PlanCantidadClases FROM plan WHERE PlanId = ?",
         [req.body.PlanId]
       );
       if (planRows.length === 0) {
@@ -253,14 +268,20 @@ exports.create = async (req, res) => {
         fechaFin = addDaysLocal(fechaInicio, plan.PlanDuracion || 30);
       }
 
+      const clasesRestantes =
+        plan.PlanModalidad === "CLASES" ? plan.PlanCantidadClases || 0 : 0;
+
       const [suscResult] = await connection.query(
-        "INSERT INTO suscripcion (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado) VALUES (?, ?, ?, ?, ?)",
+        `INSERT INTO suscripcion
+         (ClienteId, PlanId, SuscripcionFechaInicio, SuscripcionFechaFin, SuscripcionEstado, SuscripcionClasesRestantes)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           req.body.ClienteId,
           req.body.PlanId,
           fechaInicio,
           fechaFin,
           calcularEstadoPorFechas(fechaInicio, fechaFin),
+          clasesRestantes,
         ]
       );
       suscripcionId = suscResult.insertId;
@@ -280,8 +301,25 @@ exports.create = async (req, res) => {
     }
     const pagoUsuarioId = req.user.id;
     const pagoFecha = req.body.PagoFecha || new Date();
-    const pagoMonto = req.body.PagoMonto;
+    const pagoMontoRaw = Number(req.body.PagoMonto);
     const pagoTipo = req.body.PagoTipo;
+
+    // Validar monto y tipo antes del INSERT. `createLote` lo hace antes del
+    // bucle; el create single no lo hacía y dejaba pasar negativos o tipos
+    // como "XX" — quedaban en BD y rompían los reportes después.
+    if (!Number.isFinite(pagoMontoRaw) || pagoMontoRaw <= 0) {
+      await connection.rollback();
+      return res
+        .status(400)
+        .json({ message: "PagoMonto debe ser un número mayor a cero" });
+    }
+    if (!pagoTipo || !PAGO_TIPOS[pagoTipo]) {
+      await connection.rollback();
+      return res.status(400).json({
+        message: `PagoTipo inválido: ${pagoTipo ?? "(vacío)"}`,
+      });
+    }
+    const pagoMonto = Math.round(pagoMontoRaw);
 
     const [pagoResult] = await connection.query(
       "INSERT INTO pago (SuscripcionId, PagoMonto, PagoTipo, PagoFecha, PagoUsuarioId) VALUES (?, ?, ?, ?, ?)",

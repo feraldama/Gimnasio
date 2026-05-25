@@ -562,3 +562,66 @@ exports.canchaDesglose = async (req, res) => {
     sendError(res, e, 500);
   }
 };
+
+// KPIs en vivo para el Dashboard de gimnasio. Reemplaza los valores hardcoded
+// ("Usuarios totales: 25", etc.) por métricas reales calculadas al vuelo.
+//
+// - sociosActivos: clientes distintos con al menos una suscripción cuya
+//   vigencia incluye hoy (recalculado por fechas, no por la columna
+//   `SuscripcionEstado` que puede haber quedado obsoleta).
+// - proximosAVencer7d: suscripciones activas con FechaFin entre hoy y hoy+7.
+// - cobradoHoy: suma de PagoMonto del día.
+// - asistenciasHoy: cantidad de ingresos registrados hoy.
+//
+// Una sola request al backend; en frontend reemplaza 4 StatCards.
+exports.dashboardGimnasioKpis = async (_req, res) => {
+  try {
+    const queryAsync = (sql, params) =>
+      new Promise((resolve, reject) => {
+        db.query(sql, params || [], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+
+    // Recalculamos vigencia por fechas, no por SuscripcionEstado, para no
+    // depender de que la columna esté al día. C y S sí se respetan (son
+    // estados manuales que no se recalculan).
+    const [activosRow] = await queryAsync(
+      `SELECT COUNT(DISTINCT ClienteId) AS n
+       FROM suscripcion
+       WHERE SuscripcionEstado NOT IN ('C', 'S')
+         AND DATE(SuscripcionFechaInicio) <= CURRENT_DATE
+         AND DATE(SuscripcionFechaFin) >= CURRENT_DATE`
+    );
+
+    const [proximosRow] = await queryAsync(
+      `SELECT COUNT(*) AS n
+       FROM suscripcion
+       WHERE SuscripcionEstado NOT IN ('C', 'S')
+         AND DATE(SuscripcionFechaFin) BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'`
+    );
+
+    const [cobradoRow] = await queryAsync(
+      `SELECT COALESCE(SUM(PagoMonto), 0) AS total, COUNT(*) AS cant
+       FROM pago
+       WHERE DATE(PagoFecha) = CURRENT_DATE`
+    );
+
+    const [asistRow] = await queryAsync(
+      `SELECT COUNT(*) AS n
+       FROM asistencia
+       WHERE DATE(AsistenciaFecha) = CURRENT_DATE`
+    );
+
+    res.json({
+      sociosActivos: Number(activosRow?.n || 0),
+      proximosAVencer7d: Number(proximosRow?.n || 0),
+      cobradoHoy: Number(cobradoRow?.total || 0),
+      cobrosHoy: Number(cobradoRow?.cant || 0),
+      asistenciasHoy: Number(asistRow?.n || 0),
+    });
+  } catch (e) {
+    sendError(res, e, 500);
+  }
+};
