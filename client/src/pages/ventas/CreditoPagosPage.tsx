@@ -109,13 +109,26 @@ const CreditoPagosPage = () => {
       // Cargamos en paralelo deudas de ventas (cantina) y deudas de canchas
       // — ambas se muestran en la misma vista para que el usuario vea todo
       // lo que el cliente debe en un solo lugar.
+      // allSettled (no all): si UNO de los endpoints falla, igual mostramos lo
+      // que el otro devolvió. Con Promise.all un solo error ocultaba ambas
+      // tablas a la vez.
       const localId = user?.LocalId;
-      const [resVentas, resCancha] = await Promise.all([
+      const [resVentasR, resCanchaR] = await Promise.allSettled([
         getVentasPendientesPorCliente(Number(clienteId), localId),
         getCreditosPendientesPorCliente(Number(clienteId)),
       ]);
-      const ventasPendientes = resVentas.data || [];
-      const creditosCanchaList = resCancha.data || [];
+
+      if (resVentasR.status === "rejected") {
+        console.error("Error al cargar ventas pendientes:", resVentasR.reason);
+      }
+      if (resCanchaR.status === "rejected") {
+        console.error("Error al cargar créditos de cancha:", resCanchaR.reason);
+      }
+
+      const ventasPendientes =
+        resVentasR.status === "fulfilled" ? resVentasR.value.data || [] : [];
+      const creditosCanchaList =
+        resCanchaR.status === "fulfilled" ? resCanchaR.value.data || [] : [];
 
       const deudaVentas = ventasPendientes.reduce(
         (sum: number, venta: VentaPendiente) => sum + Number(venta.Saldo),

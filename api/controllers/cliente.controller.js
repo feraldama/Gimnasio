@@ -247,19 +247,15 @@ exports.getClientesConDeuda = async (_req, res) => {
         GROUP BY s.ClienteId
       ),
       deuda_ventas AS (
+        -- Saldo = Total - VentaEntrega. VentaEntrega ya acumula todos los pagos
+        -- (el flujo recibir la incrementa en cada cobro), así que NO se resta
+        -- de nuevo SUM(ventacreditopago) — sería descontar los pagos dos veces.
         SELECT v.ClienteId,
-               SUM(GREATEST(v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vp.totalpagado, 0), 0)) AS saldo,
+               SUM(GREATEST(v.Total - COALESCE(v.VentaEntrega, 0), 0)) AS saldo,
                COUNT(*) AS cant
         FROM venta v
-        LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
-        LEFT JOIN (
-          SELECT vc.VentaCreditoId, SUM(vcp.VentaCreditoPagoMonto) AS totalpagado
-          FROM ventacreditopago vcp
-          JOIN ventacredito vc ON vc.VentaCreditoId = vcp.VentaCreditoId
-          GROUP BY vc.VentaCreditoId
-        ) vp ON vp.VentaCreditoId = vc.VentaCreditoId
         WHERE v.VentaTipo = 'CR'
-          AND v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vp.totalpagado, 0) > 0
+          AND v.Total - COALESCE(v.VentaEntrega, 0) > 0
         GROUP BY v.ClienteId
       ),
       deuda_cancha AS (

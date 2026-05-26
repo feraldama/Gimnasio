@@ -8,9 +8,10 @@ const db = require("../config/db");
  */
 /**
  * Construye la cláusula WHERE para filtros de ventas.
- * Asume que la query incluye el JOIN a `vcp_sum` (suma de pagos por crédito)
- * para poder evaluar el estado pendiente/completado con la fórmula:
- *   Saldo = Total - VentaEntrega - SUM(VentaCreditoPagoMonto)
+ * Saldo = Total - VentaEntrega. `VentaEntrega` ya acumula TODOS los pagos
+ * (entrega inicial + cobros posteriores vía `recibir`, que la incrementa en
+ * cada abono), así que NO se vuelve a restar SUM(VentaCreditoPagoMonto) —
+ * hacerlo descontaría los pagos dos veces. `ventacreditopago` es solo historial.
  * - Pendiente (P): solo aplica a ventas CR con Saldo > 0
  * - Completado (C): no-CR siempre, o CR con Saldo <= 0
  */
@@ -36,11 +37,11 @@ function buildVentaFiltersWhere(filters = {}) {
   }
   if (filters.estado === "P") {
     conditions.push(
-      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.total_pagos, 0)) > 0"
+      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0)) > 0"
     );
   } else if (filters.estado === "C") {
     conditions.push(
-      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.total_pagos, 0)) <= 0)"
+      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0)) <= 0)"
     );
   }
 
@@ -246,12 +247,6 @@ const Venta = {
         LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
         LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-        LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
-        LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
-          FROM ventacreditopago
-          GROUP BY VentaCreditoId
-        ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
         ${whereSql}
         ORDER BY v.${sortField} ${order}
         LIMIT ? OFFSET ?`;
@@ -262,12 +257,6 @@ const Venta = {
         const countQuery = `
           SELECT COUNT(*) as total
           FROM venta v
-          LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
-          LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
-            FROM ventacreditopago
-            GROUP BY VentaCreditoId
-          ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
           ${whereSql}`;
 
         db.query(countQuery, filterParams, (err, countResult) => {
@@ -349,15 +338,9 @@ const Venta = {
         LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
         LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-        LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
-        LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
-          FROM ventacreditopago
-          GROUP BY VentaCreditoId
-        ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
         WHERE (
           CAST(v.VentaId AS CHAR) = ?
-          OR DATE_FORMAT(v.VentaFecha, '%Y-%m-%d %H:%i:%s') LIKE ?
+          OR to_char(v.VentaFecha, 'YYYY-MM-DD HH24:MI:SS') LIKE ?
           OR LOWER(CONCAT(COALESCE(c.ClienteNombre, ''), ' ', COALESCE(c.ClienteApellido, ''))) LIKE LOWER(?)
           OR LOWER(COALESCE(a.AlmacenNombre, '')) LIKE LOWER(?)
           OR v.VentaTipo = ?
@@ -373,7 +356,7 @@ const Venta = {
           OR CAST(v.VentaCantidadProductos AS CHAR) = ?
           OR LOWER(COALESCE(u.UsuarioNombre, '')) LIKE LOWER(?)
           OR CAST(v.Total AS CHAR) = ?
-          OR LOWER(COALESCE(v.VentaEntrega, '')) LIKE LOWER(?)
+          OR LOWER(COALESCE(CAST(v.VentaEntrega AS CHAR), '')) LIKE LOWER(?)
         )${filtersAndClause}
         ORDER BY v.${sortField} ${order}
         LIMIT ? OFFSET ?
@@ -412,15 +395,9 @@ const Venta = {
           LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
           LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-          LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
-          LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS total_pagos
-            FROM ventacreditopago
-            GROUP BY VentaCreditoId
-          ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
           WHERE (
             CAST(v.VentaId AS CHAR) = ?
-            OR DATE_FORMAT(v.VentaFecha, '%Y-%m-%d %H:%i:%s') LIKE ?
+            OR to_char(v.VentaFecha, 'YYYY-MM-DD HH24:MI:SS') LIKE ?
             OR LOWER(CONCAT(COALESCE(c.ClienteNombre, ''), ' ', COALESCE(c.ClienteApellido, ''))) LIKE LOWER(?)
             OR LOWER(COALESCE(a.AlmacenNombre, '')) LIKE LOWER(?)
             OR v.VentaTipo = ?
@@ -436,7 +413,7 @@ const Venta = {
             OR CAST(v.VentaCantidadProductos AS CHAR) = ?
             OR LOWER(COALESCE(u.UsuarioNombre, '')) LIKE LOWER(?)
             OR CAST(v.Total AS CHAR) = ?
-            OR LOWER(COALESCE(v.VentaEntrega, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(CAST(v.VentaEntrega AS CHAR), '')) LIKE LOWER(?)
           )${filtersAndClause}
         `;
 
@@ -468,8 +445,9 @@ const Venta = {
           CAST((v.Total - COALESCE(v.VentaEntrega, 0)) AS DECIMAL(10,2)) as Saldo
         FROM venta v
         JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-        WHERE v.ClienteId = ? 
+        WHERE v.ClienteId = ?
         AND v.VentaTipo = 'CR'
+        AND (v.Total - COALESCE(v.VentaEntrega, 0)) > 0
       `;
 
       const params = [clienteId];
@@ -480,7 +458,11 @@ const Venta = {
         params.push(localId);
       }
 
-      query += ` HAVING Saldo > 0 ORDER BY v.VentaFecha ASC`;
+      // El filtro de saldo va en WHERE con la expresión cruda (no el alias):
+      // el adapter auto-quota `AS "Saldo"` y PG lowercasea una referencia
+      // `Saldo` sin comillas en HAVING → "no existe la columna saldo". Además
+      // HAVING sin GROUP BY sobre una columna no agregada es inválido en PG.
+      query += ` ORDER BY v.VentaFecha ASC`;
 
       db.query(query, params, (err, results) => {
         if (err) {
@@ -615,9 +597,13 @@ const Venta = {
           }
 
           // Query #2: todos los ventacredito del set en una sola tirada.
+          // Placeholders explícitos (un `?` por id): el adaptador PG traduce
+          // `?` posicionalmente a `$N` y NO expande arrays como mysql2, así que
+          // `IN (?)` con un array rompería.
+          const creditoVentaPlaceholders = creditoVentaIds.map(() => "?").join(", ");
           db.query(
-            `SELECT * FROM ventacredito WHERE VentaId IN (?)`,
-            [creditoVentaIds],
+            `SELECT * FROM ventacredito WHERE VentaId IN (${creditoVentaPlaceholders})`,
+            creditoVentaIds,
             (err, creditosResults) => {
               if (err) return reject(err);
 
@@ -631,11 +617,12 @@ const Venta = {
               }
 
               // Query #3: todos los pagos del set, ordenados y agrupados en memoria.
+              const creditoPlaceholders = creditoIds.map(() => "?").join(", ");
               db.query(
                 `SELECT * FROM ventacreditopago
-                 WHERE VentaCreditoId IN (?)
+                 WHERE VentaCreditoId IN (${creditoPlaceholders})
                  ORDER BY VentaCreditoPagoFecha ASC, VentaCreditoPagoId ASC`,
-                [creditoIds],
+                creditoIds,
                 (err, pagosResults) => {
                   if (err) return reject(err);
 
