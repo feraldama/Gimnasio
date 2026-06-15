@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import Swal from "sweetalert2";
 import { CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { Button } from "../common/ui";
@@ -175,6 +176,19 @@ export default function ReservaRecurrenteModal({
     return generarFechas(fechaInicio, cantSemanas, diasSemana);
   }, [fechaInicio, cantSemanas, diasSemana]);
 
+  // Cerrar con Escape (salvo mientras guarda o con el buscador de cliente
+  // anidado abierto) + atrapar el foco.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !guardando && !showClienteModal) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, guardando, showClienteModal, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, dialogRef);
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -273,14 +287,24 @@ export default function ReservaRecurrenteModal({
         if (e.target === e.currentTarget && !guardando) onClose();
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reserva-recurrente-modal-title"
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
         <div className="p-5 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <span className="flex items-center justify-center w-10 h-10 rounded-md bg-blue-100 text-blue-700">
               <CalendarDaysIcon className="w-5 h-5" />
             </span>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2
+                id="reserva-recurrente-modal-title"
+                className="text-lg font-semibold text-gray-900"
+              >
                 Reserva recurrente
               </h2>
               <p className="text-xs text-gray-500">

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 import type { Proveedor } from "../../types";
 
@@ -68,20 +69,45 @@ const ProveedorModal: React.FC<ProveedorModalProps> = ({
     }
   }, [show, showCreateForm]);
 
+  // Cerrar con Escape (salvo que esté abierto el formulario de creación anidado).
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showCreateForm) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, showCreateForm, onClose]);
+
+  // Focus trap; el foco inicial lo maneja el efecto de arriba (input de búsqueda).
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(show, dialogRef, { autoFocus: false });
+
   if (!show) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-4xl p-6 relative">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="proveedor-modal-title"
+        className="bg-white rounded-xl shadow-lg w-full max-w-4xl p-6 relative"
+      >
         <button
+          aria-label="Cerrar"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl cursor-pointer"
           onClick={onClose}
         >
           &times;
         </button>
         <div className="flex justify-between items-center mb-4 pr-8">
-          <h2 className="text-2xl font-semibold text-gray-800">
+          <h2
+            id="proveedor-modal-title"
+            className="text-2xl font-semibold text-gray-800"
+          >
             Seleccionar Proveedor
           </h2>
           <button

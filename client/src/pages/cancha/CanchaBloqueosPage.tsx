@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import Swal from "sweetalert2";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { usePermiso } from "../../hooks/usePermiso";
@@ -60,6 +61,18 @@ export default function CanchaBloqueosPage() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
+
+  // Accesibilidad del modal: cerrar con Escape + atrapar el foco.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(modalOpen, dialogRef);
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [modalOpen]);
   const [saving, setSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -285,8 +298,20 @@ export default function CanchaBloqueosPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h2 className="text-lg font-semibold mb-4">Nuevo bloqueo</h2>
+          <div
+            ref={dialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bloqueo-modal-title"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+          >
+            <h2
+              id="bloqueo-modal-title"
+              className="text-lg font-semibold mb-4"
+            >
+              Nuevo bloqueo
+            </h2>
 
             <div className="space-y-3">
               <div>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
 import SearchButton from "../common/Input/SearchButton";
@@ -84,6 +85,18 @@ export default function MenusList({
     { key: "MenuNombre", label: "Nombre" },
   ];
 
+  // Cerrar con Escape + atrapar el foco mientras el modal está abierto.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isModalOpen, dialogRef);
+
   return (
     <>
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -131,15 +144,21 @@ export default function MenusList({
               onSubmit={handleSubmit}
               className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="menu-modal-title"
             >
               <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 id="menu-modal-title" className="text-xl font-semibold text-gray-900">
                   {currentMenu
                     ? `Editar menú: ${currentMenu.MenuNombre}`
                     : "Crear nuevo menú"}
                 </h3>
                 <button
                   type="button"
+                  aria-label="Cerrar"
                   className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
                   onClick={onCloseModal}
                 >

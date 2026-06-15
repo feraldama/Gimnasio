@@ -258,6 +258,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
               </div>
               <button
                 type="button"
+                aria-label="Cerrar menú"
                 className="rounded-md text-gray-300 hover:text-white focus:outline-none cursor-pointer"
                 onClick={() => setMobileOpen(false)}
               >

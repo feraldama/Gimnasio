@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import { loadPdf } from "../../utils/lazyPdf";
@@ -321,6 +322,19 @@ const ReportesPage: React.FC = () => {
 
   // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
   const [reporteActivo, setReporteActivo] = useState<string | null>(null);
+
+  // Accesibilidad del modal de reporte: cerrar con Escape (salvo mientras carga)
+  // + atrapar el foco.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(!!reporteActivo, dialogRef);
+  useEffect(() => {
+    if (!reporteActivo) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) setReporteActivo(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [reporteActivo, loading]);
 
   // Suscripciones próximas a vencer
   const [diasProximas, setDiasProximas] = useState(30);
@@ -2064,11 +2078,19 @@ const ReportesPage: React.FC = () => {
           onClick={() => !loading && setReporteActivo(null)}
         >
           <div
+            ref={dialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reporte-modal-title"
             className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3
+                id="reporte-modal-title"
+                className="text-lg font-semibold text-slate-900"
+              >
                 {reporteActivo === "proximas" && "Suscripciones próximas a vencer"}
                 {reporteActivo === "cobranza" && "Cobranza por período"}
                 {reporteActivo === "ranking" && "Ranking de asistencia"}

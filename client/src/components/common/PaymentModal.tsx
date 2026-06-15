@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { formatMiles } from "../../utils/utils";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface PaymentModalProps {
   show: boolean;
@@ -243,6 +244,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     ["00", 0, "000"],
   ];
 
+  // Cerrar con Escape + atrapar el foco. autoFocus:false para no interferir con
+  // el atajo Enter (que confirma el pago) basado en el foco del overlay.
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, handleClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(show, dialogRef, { autoFocus: false });
+
   if (!show) return null;
 
   return (
@@ -263,6 +277,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       tabIndex={0}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="payment-modal-title"
         style={{
           background: "#fff",
           borderRadius: 12,
@@ -274,6 +292,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         }}
       >
         <button
+          aria-label="Cerrar"
           onClick={handleClose}
           style={{
             position: "absolute",
@@ -289,6 +308,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ×
         </button>
         <h2
+          id="payment-modal-title"
           style={{
             fontWeight: 700,
             fontSize: 26,

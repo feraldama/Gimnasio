@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import Swal from "sweetalert2";
 import {
   createReserva,
@@ -459,6 +460,19 @@ export default function ReservaFormModal({
     }
   }, [initial, serieInfo, onClose, onSaved]);
 
+  // Cerrar con Escape (salvo con un modal anidado abierto: buscador de cliente
+  // o cobro) + atrapar el foco.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showClienteModal && !showCobrarModal) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, showClienteModal, showCobrarModal, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, dialogRef);
+
   if (!open) return null;
 
   const esEdicion = form.CanchaReservaId > 0;
@@ -489,9 +503,16 @@ export default function ReservaFormModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reserva-form-modal-title"
+        className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto"
+      >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">
+          <h2 id="reserva-form-modal-title" className="text-lg font-semibold">
             {esEdicion ? "Editar reserva" : "Nueva reserva"}
           </h2>
           {esEdicion && (

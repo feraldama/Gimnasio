@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
@@ -392,6 +393,18 @@ export default function ProductsList({
     },
   ];
 
+  // Cerrar con Escape + atrapar el foco mientras el modal está abierto.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isModalOpen, dialogRef);
+
   return (
     <>
       {/* Barra superior de búsqueda y acciones */}
@@ -638,15 +651,21 @@ export default function ProductsList({
             <form
               onSubmit={handleSubmit}
               className="relative bg-white rounded-lg shadow"
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="producto-modal-title"
             >
               <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 id="producto-modal-title" className="text-xl font-semibold text-gray-900">
                   {currentProduct
                     ? `Editar producto: ${currentProduct.ProductoNombre}`
                     : "Crear nuevo producto"}
                 </h3>
                 <button
                   type="button"
+                  aria-label="Cerrar"
                   className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
                   onClick={onCloseModal}
                 >
@@ -975,6 +994,7 @@ export default function ProductsList({
                                     onClick={() => removeStockAlmacen(index)}
                                     className="text-red-600 hover:text-red-800 p-1 rounded"
                                     title="Eliminar"
+                                    aria-label="Eliminar almacén"
                                   >
                                     <TrashIcon className="w-5 h-5" />
                                   </button>

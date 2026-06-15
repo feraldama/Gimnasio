@@ -81,32 +81,47 @@ function DataTable<T extends DataTableRow>({
                 <th
                   key={column.key}
                   scope="col"
-                  className="px-6 py-3 cursor-pointer select-none"
-                  onClick={() => {
-                    if (onSort) {
-                      if (sortKey === column.key) {
-                        onSort(
-                          column.key,
-                          sortOrder === "asc" ? "desc" : "asc"
-                        );
-                      } else {
-                        onSort(column.key, "asc");
-                      }
-                    } else {
-                      if (localSortKey === column.key) {
-                        setLocalSortOrder(
-                          localSortOrder === "asc" ? "desc" : "asc"
-                        );
-                      } else {
-                        setLocalSortKey(column.key);
-                        setLocalSortOrder("asc");
-                      }
-                    }
-                  }}
+                  aria-sort={
+                    activeKey === column.key
+                      ? activeOrder === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                  className="px-6 py-3 select-none"
                 >
-                  {column.label}
-                  {activeKey === column.key &&
-                    (activeOrder === "asc" ? " ▲" : " ▼")}
+                  {/* El header de orden es un <button> nativo: operable por
+                      teclado (Enter/Space) y con foco visible, en vez de un
+                      <th> con onClick que el teclado no podía activar. */}
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 w-full text-left uppercase cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                    onClick={() => {
+                      if (onSort) {
+                        if (sortKey === column.key) {
+                          onSort(
+                            column.key,
+                            sortOrder === "asc" ? "desc" : "asc"
+                          );
+                        } else {
+                          onSort(column.key, "asc");
+                        }
+                      } else {
+                        if (localSortKey === column.key) {
+                          setLocalSortOrder(
+                            localSortOrder === "asc" ? "desc" : "asc"
+                          );
+                        } else {
+                          setLocalSortKey(column.key);
+                          setLocalSortOrder("asc");
+                        }
+                      }
+                    }}
+                  >
+                    {column.label}
+                    {activeKey === column.key &&
+                      (activeOrder === "asc" ? " ▲" : " ▼")}
+                  </button>
                 </th>
               );
             })}
@@ -150,6 +165,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onEdit(item)}
                           className="font-medium text-blue-600 hover:underline cursor-pointer"
                           title="Editar"
+                          aria-label="Editar"
                         >
                           <PencilSquareIcon className="h-5 w-5 inline" />
                         </button>
@@ -159,6 +175,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onViewCredit(item)}
                           className="font-medium text-green-600 hover:underline cursor-pointer"
                           title="Ver Detalles de Crédito"
+                          aria-label="Ver detalles de crédito"
                         >
                           <CreditCardIcon className="h-5 w-5 inline" />
                         </button>
@@ -168,6 +185,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onDelete(item)}
                           className="font-medium text-red-600 hover:underline cursor-pointer"
                           title="Eliminar"
+                          aria-label="Eliminar"
                         >
                           <TrashIcon className="h-5 w-5 inline" />
                         </button>

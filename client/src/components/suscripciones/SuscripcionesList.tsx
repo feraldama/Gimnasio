@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
@@ -258,6 +259,20 @@ export default function SuscripcionesList({
     }
   };
 
+  // Cerrar el modal con Escape (accesibilidad: ruta de escape por teclado).
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
+
+  // Atrapar el foco dentro del modal mientras está abierto.
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isModalOpen, dialogRef);
+
   const formatDate = (dateString: string) => formatDateLocal(dateString);
 
   // La lógica vive en utils/suscripcionEstado.ts (compartida con FichaAlumnoPage).
@@ -370,8 +385,14 @@ export default function SuscripcionesList({
         </div>
         <div className="flex gap-2">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Estado</label>
+            <label
+              htmlFor="filtro-estado"
+              className="block text-xs text-gray-500 mb-1"
+            >
+              Estado
+            </label>
             <select
+              id="filtro-estado"
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
               value={filtroEstado}
               onChange={(e) =>
@@ -387,8 +408,14 @@ export default function SuscripcionesList({
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Pago</label>
+            <label
+              htmlFor="filtro-pago"
+              className="block text-xs text-gray-500 mb-1"
+            >
+              Pago
+            </label>
             <select
+              id="filtro-pago"
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
               value={filtroPago}
               onChange={(e) =>
@@ -426,7 +453,8 @@ export default function SuscripcionesList({
                     type="button"
                     onClick={() => onRenovar(suscripcion)}
                     title="Renovar suscripción"
-                    className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 mr-2 cursor-pointer"
+                    aria-label="Renovar suscripción"
+                    className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 mr-1 p-1.5 rounded cursor-pointer"
                   >
                     <ArrowPathIcon className="h-5 w-5" />
                   </button>
@@ -436,7 +464,8 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onSuspender(suscripcion)}
                   title="Suspender suscripción"
-                  className="inline-flex items-center justify-center text-amber-600 hover:text-amber-800 mr-2 cursor-pointer"
+                  aria-label="Suspender suscripción"
+                  className="inline-flex items-center justify-center text-amber-600 hover:text-amber-800 hover:bg-amber-50 mr-1 p-1.5 rounded cursor-pointer"
                 >
                   <PauseIcon className="h-5 w-5" />
                 </button>
@@ -446,7 +475,8 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onCancelar(suscripcion)}
                   title="Cancelar suscripción"
-                  className="inline-flex items-center justify-center text-gray-600 hover:text-gray-800 mr-2 cursor-pointer"
+                  aria-label="Cancelar suscripción"
+                  className="inline-flex items-center justify-center text-gray-600 hover:text-gray-800 hover:bg-gray-100 mr-1 p-1.5 rounded cursor-pointer"
                 >
                   <NoSymbolIcon className="h-5 w-5" />
                 </button>
@@ -456,7 +486,8 @@ export default function SuscripcionesList({
                   type="button"
                   onClick={() => onReactivar(suscripcion)}
                   title="Reactivar suscripción"
-                  className="inline-flex items-center justify-center text-green-600 hover:text-green-800 mr-2 cursor-pointer"
+                  aria-label="Reactivar suscripción"
+                  className="inline-flex items-center justify-center text-green-600 hover:text-green-800 hover:bg-green-50 mr-1 p-1.5 rounded cursor-pointer"
                 >
                   <ArrowUturnLeftIcon className="h-5 w-5" />
                 </button>
@@ -473,17 +504,26 @@ export default function SuscripcionesList({
           <div className="absolute inset-0 bg-black opacity-50" />
           <div className="relative w-full max-w-2xl max-h-full z-10">
             <form
+              ref={dialogRef}
+              tabIndex={-1}
               onSubmit={handleSubmit}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="suscripcion-modal-title"
               className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3
+                  id="suscripcion-modal-title"
+                  className="text-xl font-semibold text-gray-900"
+                >
                   {currentSuscripcion
                     ? `Editar suscripción: ${currentSuscripcion.SuscripcionId}`
                     : "Crear nueva suscripción"}
                 </h3>
                 <button
                   type="button"
+                  aria-label="Cerrar"
                   className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
                   onClick={onCloseModal}
                 >
@@ -515,6 +555,8 @@ export default function SuscripcionesList({
                     </label>
                     <button
                       type="button"
+                      id="ClienteId"
+                      aria-haspopup="dialog"
                       onClick={() => setShowClienteModal(true)}
                       className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 text-left hover:bg-gray-100 transition"
                     >

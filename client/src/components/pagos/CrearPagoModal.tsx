@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { getAllSuscripcionesSinPaginacion } from "../../services/suscripciones.service";
 import ClienteModal from "../common/ClienteModal";
 import { addDaysLocal, formatMiles, todayLocalISO } from "../../utils/utils";
@@ -521,6 +522,20 @@ export default function CrearPagoModal({
     if (e.target === e.currentTarget) onClose();
   };
 
+  // Cerrar el modal con Escape (ruta de escape por teclado).
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, onClose]);
+
+  // Atrapar el foco dentro del modal mientras está abierto.
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(show, dialogRef);
+
   if (!show) return null;
 
   return (
@@ -532,18 +547,27 @@ export default function CrearPagoModal({
         <div className="absolute inset-0 bg-black opacity-50" />
         <div className="relative w-full max-w-2xl max-h-full z-10">
           <form
+            ref={dialogRef}
+            tabIndex={-1}
             onSubmit={handleSubmit}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pago-modal-title"
             className="relative bg-white rounded-lg shadow flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex-shrink-0 flex items-start justify-between p-4 border-b rounded-t bg-white">
-              <h3 className="text-xl font-semibold text-gray-900">
+              <h3
+                id="pago-modal-title"
+                className="text-xl font-semibold text-gray-900"
+              >
                 {currentPago
                   ? `Editar pago: ${currentPago.PagoId}`
                   : "Crear nuevo pago"}
               </h3>
               <button
                 type="button"
+                aria-label="Cerrar"
                 className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center cursor-pointer"
                 onClick={onClose}
               >

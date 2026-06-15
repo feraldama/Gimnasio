@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import ActionButton from "./Button/ActionButton";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useAuth } from "../../contexts/useAuth";
 import { calcularDV } from "../../utils/rucDv";
 
@@ -90,6 +91,20 @@ export default function ClienteFormModal({
     }
   };
 
+  // Cerrar con Escape (ruta de escape por teclado).
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
+  // Atrapar el foco dentro del modal mientras está abierto.
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isOpen, dialogRef);
+
   if (!isOpen) return null;
 
   return (
@@ -100,17 +115,26 @@ export default function ClienteFormModal({
       <div className="absolute inset-0 bg-black opacity-50" />
       <div className="relative w-full max-w-2xl max-h-full z-10">
         <form
+          ref={dialogRef}
+          tabIndex={-1}
           onSubmit={handleSubmit}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cliente-form-modal-title"
           className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
         >
           <div className="flex items-start justify-between p-4 border-b rounded-t">
-            <h3 className="text-xl font-semibold text-gray-900">
+            <h3
+              id="cliente-form-modal-title"
+              className="text-xl font-semibold text-gray-900"
+            >
               {currentCliente
                 ? `Editar cliente: ${currentCliente.ClienteId || ""}`
                 : "Crear nuevo cliente"}
             </h3>
             <button
               type="button"
+              aria-label="Cerrar"
               className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
               onClick={onClose}
             >

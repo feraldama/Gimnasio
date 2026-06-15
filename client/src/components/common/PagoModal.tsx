@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { createRegistroDiarioCaja } from "../../services/registros.service";
 import { getTiposGasto } from "../../services/tipogasto.service";
 import { getTiposGastoGrupo } from "../../services/tipogastogrupo.service";
@@ -109,19 +110,45 @@ const PagoModal: React.FC<PagoModalProps> = ({
     }
   };
 
+  // Cerrar el modal con Escape (ruta de escape por teclado).
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, handleClose]);
+
+  // Atrapar el foco dentro del modal mientras está abierto.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(show, dialogRef);
+
   if (!show) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pagomodal-title"
+        className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative"
+      >
         <button
+          type="button"
+          aria-label="Cerrar"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl"
           onClick={handleClose}
         >
           &times;
         </button>
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+        <h2
+          id="pagomodal-title"
+          className="text-2xl font-semibold text-gray-800 mb-4"
+        >
           Nuevo Pago
         </h2>
         <form onSubmit={handleSubmit}>

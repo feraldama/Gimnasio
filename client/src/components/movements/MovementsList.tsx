@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
@@ -188,6 +189,18 @@ export default function MovementsList({
       onCloseModal();
     }
   };
+
+  // Accesibilidad del modal: cerrar con Escape + atrapar el foco.
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(!!isModalOpen, dialogRef);
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -431,6 +444,11 @@ export default function MovementsList({
           <div className="absolute inset-0 bg-black opacity-50" />
           <div className="relative w-full max-w-2xl max-h-full z-10">
             <form
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Movimiento de caja"
               onSubmit={handleSubmit}
               className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
             >

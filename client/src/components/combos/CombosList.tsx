@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
@@ -170,6 +171,18 @@ export default function CombosList({
     },
   ];
 
+  // Cerrar con Escape + atrapar el foco mientras el modal está abierto.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isModalOpen, dialogRef);
+
   return (
     <>
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -220,15 +233,21 @@ export default function CombosList({
             <form
               onSubmit={handleSubmit}
               className="relative bg-white rounded-lg shadow"
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="combo-modal-title"
             >
               <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 id="combo-modal-title" className="text-xl font-semibold text-gray-900">
                   {currentCombo
                     ? `Editar combo: ${currentCombo.ComboDescripcion}`
                     : "Crear nuevo combo"}
                 </h3>
                 <button
                   type="button"
+                  aria-label="Cerrar"
                   className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
                   onClick={onCloseModal}
                 >

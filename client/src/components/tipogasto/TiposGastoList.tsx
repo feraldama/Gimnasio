@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import SearchButton from "../common/Input/SearchButton";
 import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
@@ -135,6 +136,18 @@ export default function TiposGastoList({
     { key: "TipoGastoDescripcion", label: "Descripción" },
   ];
 
+  // Cerrar con Escape + atrapar el foco mientras el modal está abierto.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseModal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isModalOpen, onCloseModal]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useFocusTrap(isModalOpen, dialogRef);
+
   return (
     <>
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -181,15 +194,21 @@ export default function TiposGastoList({
             <form
               onSubmit={handleSubmit}
               className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tipogasto-modal-title"
             >
               <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 id="tipogasto-modal-title" className="text-xl font-semibold text-gray-900">
                   {currentTipoGasto
                     ? `Editar tipo de gasto: ${currentTipoGasto.TipoGastoDescripcion}`
                     : "Crear nuevo tipo de gasto"}
                 </h3>
                 <button
                   type="button"
+                  aria-label="Cerrar"
                   className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
                   onClick={onCloseModal}
                 >
@@ -318,6 +337,7 @@ export default function TiposGastoList({
                                     type="button"
                                     className="text-blue-600 hover:underline text-xs cursor-pointer"
                                     title="Editar"
+                                    aria-label="Editar grupo de gasto"
                                     onClick={() => {
                                       setEditGrupoId(g.TipoGastoGrupoId);
                                       setEditGrupoDesc(
@@ -331,6 +351,7 @@ export default function TiposGastoList({
                                     type="button"
                                     className="text-red-600 hover:underline text-xs ml-2 cursor-pointer"
                                     title="Eliminar"
+                                    aria-label="Eliminar grupo de gasto"
                                     onClick={async () => {
                                       const confirm = await Swal.fire({
                                         title: "¿Estás seguro?",

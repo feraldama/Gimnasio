@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Swal from "sweetalert2";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import {
   getVentasPaginated,
   searchVentas,
@@ -693,13 +694,33 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     return numero.toLocaleString("es-PY") + " GUARANÍES";
   };
 
+  // Cerrar con Escape + atrapar el foco mientras el modal está abierto.
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(show, dialogRef);
+
   if (!show) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-6xl p-6 relative max-h-[90vh] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invoice-print-modal-title"
+        className="bg-white rounded-xl shadow-lg w-full max-w-6xl p-6 relative max-h-[90vh] overflow-y-auto"
+      >
         <button
+          aria-label="Cerrar"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl cursor-pointer"
           onClick={onClose}
         >
@@ -707,7 +728,10 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         </button>
 
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-semibold text-gray-800">
+          <h2
+            id="invoice-print-modal-title"
+            className="text-2xl font-semibold text-gray-800"
+          >
             Imprimir Factura
           </h2>
         </div>

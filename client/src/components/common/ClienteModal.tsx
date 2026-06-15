@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import ClienteFormModal from "./ClienteFormModal";
 import type { Cliente } from "./ClienteFormModal";
 import { Button, TextInput, Badge } from "./ui";
 import { formatMiles } from "../../utils/utils";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface ClienteModalProps {
   show: boolean;
@@ -62,12 +63,34 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
     }
   };
 
+  // Cerrar con Escape, pero solo si el modal de "crear cliente" anidado NO está
+  // abierto (en ese caso el Escape lo maneja ese modal interno).
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showCreateModal) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [show, showCreateModal, onClose]);
+
+  // Atrapar el foco dentro del modal mientras está abierto.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(show, dialogRef);
+
   if (!show) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-surface rounded-lg shadow-modal w-full max-w-4xl max-h-[90vh] p-6 relative flex flex-col">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cliente-modal-title"
+        className="bg-surface rounded-lg shadow-modal w-full max-w-4xl max-h-[90vh] p-6 relative flex flex-col"
+      >
         <button
           aria-label="Cerrar"
           className="absolute top-4 right-4 text-text-subtle hover:text-text transition-colors duration-150 cursor-pointer"
@@ -76,7 +99,12 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
           <XMarkIcon className="w-5 h-5" />
         </button>
         <div className="flex justify-between items-center mb-4 pr-8">
-          <h2 className="text-xl font-semibold text-text">Buscar Cliente</h2>
+          <h2
+            id="cliente-modal-title"
+            className="text-xl font-semibold text-text"
+          >
+            Buscar Cliente
+          </h2>
           {onCreateCliente && (
             <Button
               variant="primary"
