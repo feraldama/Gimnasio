@@ -1,4 +1,4 @@
-import logo from "../assets/img/logo.jpg";
+import logo from "../assets/img/logo.png";
 
 /**
  * URL del endpoint binario de imagen de producto.
@@ -16,7 +16,7 @@ export function getProductoImagenUrl(productoId: number | string): string {
  */
 export function resolveProductoImagen(
   productoId: number | string,
-  hasImagen: number | boolean | null | undefined
+  hasImagen: number | boolean | null | undefined,
 ): string {
   if (hasImagen) return getProductoImagenUrl(productoId);
   return logo;

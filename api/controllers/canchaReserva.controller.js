@@ -901,7 +901,8 @@ exports.remove = async (req, res) => {
 // Body esperado:
 //   {
 //     CanchaId, ClienteId?, CanchaReservaCliente?,
-//     fechaInicio: "YYYY-MM-DD",         // primera ocurrencia
+//     fechaInicio: "YYYY-MM-DD",         // inicio de la serie (no se crean fechas previas)
+//     diasSemana?: "L,M,X,J,V,S,D",      // días a generar (CSV de siglas, opcional)
 //     cantidadSemanas: N,                // total de reservas a generar (incl. la primera)
 //     CanchaReservaHoraInicio: "HH:MM",  // mismo horario en todas
 //     CanchaReservaHoraFin: "HH:MM",
@@ -919,6 +920,7 @@ exports.crearRecurrente = async (req, res) => {
     ClienteId,
     CanchaReservaCliente,
     fechaInicio,
+    diasSemana,
     cantidadSemanas,
     CanchaReservaHoraInicio,
     CanchaReservaHoraFin,
@@ -949,11 +951,36 @@ exports.crearRecurrente = async (req, res) => {
     });
   }
 
-  // Calcular las N fechas (mismo día de semana, +7 días cada vez).
-  // Usamos addDaysLocal para evitar saltos de zona horaria.
+  // Días de la semana a generar. Siglas L,M,X,J,V,S,D (mismo formato que las
+  // bandas de tarifa). Si no se especifica, se usa el día de semana de
+  // `fechaInicio` (comportamiento histórico: una reserva por semana).
+  const OFFSET_LUN = { L: 0, M: 1, X: 2, J: 3, V: 4, S: 5, D: 6 };
+  const ORDEN_DIAS = ["L", "M", "X", "J", "V", "S", "D"];
+  const SIGLA_BY_JSDAY = ["D", "L", "M", "X", "J", "V", "S"]; // getDay 0=Dom..6=Sab
+
+  const diasSeleccionados = String(diasSemana || "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => OFFSET_LUN[s] !== undefined);
+  if (diasSeleccionados.length === 0) {
+    const [yi, mi, di] = String(fechaInicio).split("-").map(Number);
+    diasSeleccionados.push(SIGLA_BY_JSDAY[new Date(yi, mi - 1, di).getDay()]);
+  }
+
+  // Calcular las fechas: para cada una de las N semanas, una fecha por cada
+  // día seleccionado. Anclamos al lunes de la semana de `fechaInicio` y
+  // descartamos las ocurrencias anteriores a `fechaInicio`. addDaysLocal
+  // evita saltos de zona horaria (acepta offsets negativos).
+  const [fy, fm, fd] = String(fechaInicio).split("-").map(Number);
+  const jsDay = new Date(fy, fm - 1, fd).getDay();
+  const lunesISO = addDaysLocal(fechaInicio, jsDay === 0 ? -6 : 1 - jsDay);
   const fechas = [];
-  for (let i = 0; i < cant; i++) {
-    fechas.push(addDaysLocal(fechaInicio, i * 7));
+  for (let w = 0; w < cant; w++) {
+    for (const sigla of ORDEN_DIAS) {
+      if (!diasSeleccionados.includes(sigla)) continue;
+      const f = addDaysLocal(lunesISO, w * 7 + OFFSET_LUN[sigla]);
+      if (f >= fechaInicio) fechas.push(f);
+    }
   }
 
   const usuarioId = req.body.UsuarioId || req.user?.UsuarioId || req.user?.id || null;

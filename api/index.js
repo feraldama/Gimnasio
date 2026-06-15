@@ -44,6 +44,9 @@ const app = express();
 // ALLOWED_ORIGINS en .env como lista separada por comas, o "*" para abrir
 // a todos los orígenes (útil solo en LAN cerrada).
 const defaultOrigins = [
+  "http://localhost:3006",
+  "http://127.0.0.1:3006",
+  "http://192.168.0.17:3006",
   "http://localhost:3008",
   "http://127.0.0.1:3008",
   "http://192.168.0.17:3008",

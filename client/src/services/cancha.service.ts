@@ -238,7 +238,8 @@ export interface RecurrenteInput {
   CanchaId: number;
   ClienteId?: number | null;
   CanchaReservaCliente?: string;
-  fechaInicio: string; // YYYY-MM-DD (primera ocurrencia)
+  fechaInicio: string; // YYYY-MM-DD (inicio de la serie)
+  diasSemana?: string; // CSV de siglas "L,M,X,J,V,S,D"; vacío = día de fechaInicio
   cantidadSemanas: number; // 2..52
   CanchaReservaHoraInicio: string; // HH:MM
   CanchaReservaHoraFin: string;

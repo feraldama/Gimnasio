@@ -41,6 +41,67 @@ function diaSemanaDe(fechaISO: string): string {
   return DIAS_SEM[new Date(y, m - 1, d).getDay()];
 }
 
+// Selector de días — mismas siglas que las bandas de tarifa (L,M,X,J,V,S,D).
+const DIAS = [
+  { sigla: "L", label: "Lun" },
+  { sigla: "M", label: "Mar" },
+  { sigla: "X", label: "Mié" },
+  { sigla: "J", label: "Jue" },
+  { sigla: "V", label: "Vie" },
+  { sigla: "S", label: "Sáb" },
+  { sigla: "D", label: "Dom" },
+];
+const OFFSET_LUN: Record<string, number> = {
+  L: 0,
+  M: 1,
+  X: 2,
+  J: 3,
+  V: 4,
+  S: 5,
+  D: 6,
+};
+// getDay (0=Dom..6=Sab) -> sigla.
+const SIGLA_BY_JSDAY = ["D", "L", "M", "X", "J", "V", "S"];
+
+function parseDias(csv: string): string[] {
+  return (csv || "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => OFFSET_LUN[s] !== undefined);
+}
+
+function siglaDeFecha(fechaISO: string): string {
+  if (!fechaISO) return "";
+  const [y, m, d] = fechaISO.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return SIGLA_BY_JSDAY[new Date(y, m - 1, d).getDay()];
+}
+
+// Genera las fechas de la serie: para cada una de las N semanas, una fecha por
+// cada día seleccionado. Ancla al lunes de la semana de `fechaInicio` y descarta
+// ocurrencias anteriores a esa fecha. Debe coincidir con la lógica del backend.
+function generarFechas(
+  fechaInicio: string,
+  semanas: number,
+  diasCsv: string
+): string[] {
+  const dias = parseDias(diasCsv);
+  if (!fechaInicio || semanas < 1 || dias.length === 0) return [];
+  const [y, m, d] = fechaInicio.split("-").map(Number);
+  if (!y || !m || !d) return [];
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const lunesISO = addDaysLocal(fechaInicio, jsDay === 0 ? -6 : 1 - jsDay);
+  const out: string[] = [];
+  for (let w = 0; w < semanas; w++) {
+    for (const dia of DIAS) {
+      if (!dias.includes(dia.sigla)) continue;
+      const f = addDaysLocal(lunesISO, w * 7 + OFFSET_LUN[dia.sigla]);
+      if (f >= fechaInicio) out.push(f);
+    }
+  }
+  return out;
+}
+
 export default function ReservaRecurrenteModal({
   open,
   canchas,
@@ -53,6 +114,11 @@ export default function ReservaRecurrenteModal({
     useState<ClienteFull | null>(null);
   const [nombreInvitado, setNombreInvitado] = useState("");
   const [fechaInicio, setFechaInicio] = useState(todayLocalISO());
+  // Días a generar (CSV de siglas). `diasTocado` indica que el operador eligió
+  // días manualmente; mientras sea false, el día se sincroniza con fechaInicio
+  // para preservar el comportamiento previo (una reserva semanal en ese día).
+  const [diasSemana, setDiasSemana] = useState(siglaDeFecha(todayLocalISO()));
+  const [diasTocado, setDiasTocado] = useState(false);
   const [cantSemanas, setCantSemanas] = useState(4);
   const [horaInicio, setHoraInicio] = useState("19:00");
   const [horaFin, setHoraFin] = useState("20:00");
@@ -68,6 +134,8 @@ export default function ReservaRecurrenteModal({
     setClienteSeleccionado(null);
     setNombreInvitado("");
     setFechaInicio(todayLocalISO());
+    setDiasSemana(siglaDeFecha(todayLocalISO()));
+    setDiasTocado(false);
     setCantSemanas(4);
     setHoraInicio("19:00");
     setHoraFin("20:00");
@@ -75,17 +143,37 @@ export default function ReservaRecurrenteModal({
     setObservacion("");
   }, [open, canchas]);
 
+  // Mientras el operador no haya tocado los días, el día seleccionado sigue al
+  // de la primera fecha (comportamiento histórico: reserva semanal ese día).
+  useEffect(() => {
+    if (!diasTocado && fechaInicio) setDiasSemana(siglaDeFecha(fechaInicio));
+  }, [fechaInicio, diasTocado]);
+
+  const toggleDia = (sigla: string) => {
+    setDiasTocado(true);
+    const set = new Set(parseDias(diasSemana));
+    if (set.has(sigla)) set.delete(sigla);
+    else set.add(sigla);
+    setDiasSemana(
+      DIAS.filter((d) => set.has(d.sigla))
+        .map((d) => d.sigla)
+        .join(",")
+    );
+  };
+
+  const setDiasShortcut = (kind: "todos" | "habiles" | "finde") => {
+    setDiasTocado(true);
+    const map = { todos: "L,M,X,J,V,S,D", habiles: "L,M,X,J,V", finde: "S,D" };
+    setDiasSemana(map[kind]);
+  };
+
   // Preview de fechas: vista en vivo de qué reservas se van a generar.
   // El backend valida cada una contra bloqueos/conflictos; acá sólo mostramos
   // las fechas calculadas para que el operador confirme el patrón.
   const fechasPreview = useMemo(() => {
-    if (!fechaInicio || cantSemanas < 2) return [];
-    const arr: string[] = [];
-    for (let i = 0; i < cantSemanas; i++) {
-      arr.push(addDaysLocal(fechaInicio, i * 7));
-    }
-    return arr;
-  }, [fechaInicio, cantSemanas]);
+    if (cantSemanas < 2) return [];
+    return generarFechas(fechaInicio, cantSemanas, diasSemana);
+  }, [fechaInicio, cantSemanas, diasSemana]);
 
   if (!open) return null;
 
@@ -110,6 +198,14 @@ export default function ReservaRecurrenteModal({
       });
       return;
     }
+    if (parseDias(diasSemana).length === 0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Seleccioná al menos un día",
+        text: "Elegí los días de la semana en los que se repite la reserva.",
+      });
+      return;
+    }
     try {
       setGuardando(true);
       const r = await crearReservaRecurrente({
@@ -119,6 +215,7 @@ export default function ReservaRecurrenteModal({
           : null,
         CanchaReservaCliente: clienteSeleccionado ? "" : nombreInvitado,
         fechaInicio,
+        diasSemana,
         cantidadSemanas: cantSemanas,
         CanchaReservaHoraInicio: horaInicio,
         CanchaReservaHoraFin: horaFin,
@@ -276,7 +373,8 @@ export default function ReservaRecurrenteModal({
             />
             {fechaInicio && (
               <p className="mt-1 text-xs text-gray-500">
-                Día: <strong>{diaSemanaDe(fechaInicio)}</strong>
+                Inicia un <strong>{diaSemanaDe(fechaInicio)}</strong> (no se
+                crean fechas anteriores)
               </p>
             )}
           </div>
@@ -294,6 +392,55 @@ export default function ReservaRecurrenteModal({
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md"
             />
+          </div>
+
+          {/* Días de la semana */}
+          <div className="col-span-2">
+            <label className="block text-xs text-gray-500 mb-2">
+              Días de la semana
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {DIAS.map((d) => {
+                const activo = parseDias(diasSemana).includes(d.sigla);
+                return (
+                  <button
+                    key={d.sigla}
+                    type="button"
+                    onClick={() => toggleDia(d.sigla)}
+                    className={`px-3 py-1.5 text-sm rounded-md border cursor-pointer transition-colors ${
+                      activo
+                        ? "bg-blue-600 text-white border-blue-700"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setDiasShortcut("todos")}
+                className="text-blue-600 hover:underline cursor-pointer"
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiasShortcut("habiles")}
+                className="text-blue-600 hover:underline cursor-pointer"
+              >
+                Lun-Vie
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiasShortcut("finde")}
+                className="text-blue-600 hover:underline cursor-pointer"
+              >
+                Sáb-Dom
+              </button>
+            </div>
           </div>
 
           <div>
