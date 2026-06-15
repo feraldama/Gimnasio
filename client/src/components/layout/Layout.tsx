@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
@@ -32,7 +32,15 @@ export default function Layout() {
               : "flex-1 overflow-y-auto p-4 lg:ml-64"
           }
         >
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center min-h-[50vh] text-gray-400">
+                Cargando…
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
