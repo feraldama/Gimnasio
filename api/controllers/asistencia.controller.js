@@ -28,13 +28,21 @@ exports.registrar = async (req, res) => {
     if (!estado.permitido) {
       return res.status(403).json({ message: estado.motivo, estado });
     }
-    const asistencia = await Asistencia.registrar(ClienteId, estado.suscripcion);
+    const result = await Asistencia.registrar(ClienteId, estado.suscripcion);
+    // Reflejar el cupo real post-descuento (no asumir -1).
+    if (result.clasesRestantes != null && estado.suscripcion) {
+      estado.suscripcion.SuscripcionClasesRestantes = result.clasesRestantes;
+    }
     res.status(201).json({
       message: "Asistencia registrada",
-      data: asistencia,
+      data: result.asistencia,
       estado,
     });
   } catch (error) {
+    // Cupo agotado entre la validación y el registro (carrera).
+    if (error.code === "SIN_CUPO") {
+      return res.status(409).json({ message: error.message });
+    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -77,21 +85,22 @@ exports.kiosko = async (req, res) => {
     if (!estado.permitido) {
       return res.json(estado);
     }
-    const asistencia = await Asistencia.registrar(row.ClienteId, estado.suscripcion);
-    // Si la modalidad era CLASES, el cupo se descontó dentro de `registrar`.
-    // Reflejamos el nuevo cupo en la respuesta sin volver a la DB asumiendo -1.
-    if (
-      estado.suscripcion &&
-      estado.suscripcion.PlanModalidad === "CLASES" &&
-      typeof estado.suscripcion.SuscripcionClasesRestantes === "number"
-    ) {
-      estado.suscripcion.SuscripcionClasesRestantes = Math.max(
-        0,
-        estado.suscripcion.SuscripcionClasesRestantes - 1
-      );
+    const result = await Asistencia.registrar(row.ClienteId, estado.suscripcion);
+    // El cupo se descontó dentro de `registrar`; reflejamos el valor REAL
+    // devuelto por la transacción (no asumimos -1).
+    if (result.clasesRestantes != null && estado.suscripcion) {
+      estado.suscripcion.SuscripcionClasesRestantes = result.clasesRestantes;
     }
-    return res.json({ ...estado, asistencia });
+    return res.json({ ...estado, asistencia: result.asistencia });
   } catch (error) {
+    if (error.code === "SIN_CUPO") {
+      return res.json({
+        permitido: false,
+        motivo: "Cupo de clases agotado",
+        cliente: null,
+        suscripcion: null,
+      });
+    }
     console.error("Error en kiosko asistencia:", error);
     res.status(500).json({
       permitido: false,

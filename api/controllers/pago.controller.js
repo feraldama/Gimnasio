@@ -4,6 +4,58 @@ const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
 const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
 
+/**
+ * Reglas de negocio para cobrar sobre una suscripción (dentro de la
+ * transacción del pago). Se ejecuta ANTES de insertar el/los pago(s).
+ *   - No se cobra sobre suscripciones canceladas (C) ni suspendidas (S).
+ *   - No se permite saldo a favor: el total pagado no puede superar el precio
+ *     del plan (sólo se aplica cuando el plan tiene precio > 0; los planes con
+ *     precio 0 se consideran "sin costo" y no se topan).
+ * `montoNuevo` es el monto (o suma del lote) que se está por cobrar.
+ * Devuelve { ok: true } o { ok: false, status, message }. NO hace rollback:
+ * eso queda a cargo del caller para mantener el control de la transacción.
+ */
+async function validarCobroSuscripcion(connection, suscripcionId, montoNuevo) {
+  const [rows] = await connection.query(
+    `SELECT s.SuscripcionEstado,
+            COALESCE(p.PlanPrecio, 0) AS PlanPrecio,
+            COALESCE(
+              (SELECT SUM(PagoMonto) FROM pago WHERE SuscripcionId = s.SuscripcionId),
+              0
+            ) AS TotalPagado
+     FROM suscripcion s
+     LEFT JOIN plan p ON p.PlanId = s.PlanId
+     WHERE s.SuscripcionId = ?`,
+    [suscripcionId]
+  );
+  if (rows.length === 0) {
+    return { ok: false, status: 404, message: "Suscripción no encontrada" };
+  }
+  const estado = rows[0].SuscripcionEstado;
+  if (estado === "C" || estado === "S") {
+    return {
+      ok: false,
+      status: 409,
+      message: "No se puede cobrar sobre una suscripción cancelada o suspendida",
+    };
+  }
+  const precio = Number(rows[0].PlanPrecio) || 0;
+  const pagado = Number(rows[0].TotalPagado) || 0;
+  if (precio > 0 && pagado + Number(montoNuevo) > precio) {
+    const restante = Math.max(0, precio - pagado);
+    return {
+      ok: false,
+      status: 400,
+      message:
+        `El pago excede el precio del plan. No se permite saldo a favor ` +
+        `(máximo a cobrar: ${restante}).`,
+    };
+  }
+  return { ok: true };
+}
+// Exportado para tests (no se usa como ruta).
+exports.validarCobroSuscripcion = validarCobroSuscripcion;
+
 exports.getAll = async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const page = parseInt(req.query.page) || 1;
@@ -139,9 +191,21 @@ exports.createLote = async (req, res) => {
       });
     }
 
+    // Reglas de cobro: no cancelada/suspendida y sin saldo a favor.
+    const montoLote = pagos.reduce((acc, p) => acc + Number(p.PagoMonto), 0);
+    const valLote = await validarCobroSuscripcion(
+      connection,
+      suscripcionId,
+      montoLote
+    );
+    if (!valLote.ok) {
+      await connection.rollback();
+      return res.status(valLote.status).json({ message: valLote.message });
+    }
+
     const pagosCreados = [];
     for (const p of pagos) {
-      const pagoFecha = p.PagoFecha || new Date();
+      const pagoFecha = p.PagoFecha || todayLocalISO();
       const [r] = await connection.query(
         "INSERT INTO pago (SuscripcionId, PagoMonto, PagoTipo, PagoFecha, PagoUsuarioId) VALUES (?, ?, ?, ?, ?)",
         [suscripcionId, p.PagoMonto, p.PagoTipo, pagoFecha, usuarioId]
@@ -188,7 +252,7 @@ exports.createLote = async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             apertura.CajaId,
-            p.PagoFecha || new Date(),
+            p.PagoFecha || todayLocalISO(),
             2,
             tipoGastoGrupoId,
             detalle,
@@ -300,7 +364,7 @@ exports.create = async (req, res) => {
       return res.status(401).json({ message: "Usuario no autenticado" });
     }
     const pagoUsuarioId = req.user.id;
-    const pagoFecha = req.body.PagoFecha || new Date();
+    const pagoFecha = req.body.PagoFecha || todayLocalISO();
     const pagoMontoRaw = Number(req.body.PagoMonto);
     const pagoTipo = req.body.PagoTipo;
 
@@ -320,6 +384,17 @@ exports.create = async (req, res) => {
       });
     }
     const pagoMonto = Math.round(pagoMontoRaw);
+
+    // Reglas de cobro: no cancelada/suspendida y sin saldo a favor.
+    const valPago = await validarCobroSuscripcion(
+      connection,
+      suscripcionId,
+      pagoMonto
+    );
+    if (!valPago.ok) {
+      await connection.rollback();
+      return res.status(valPago.status).json({ message: valPago.message });
+    }
 
     const [pagoResult] = await connection.query(
       "INSERT INTO pago (SuscripcionId, PagoMonto, PagoTipo, PagoFecha, PagoUsuarioId) VALUES (?, ?, ?, ?, ?)",

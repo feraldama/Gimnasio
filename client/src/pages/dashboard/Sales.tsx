@@ -62,6 +62,10 @@ export default function Sales() {
       precioVenta: number;
       precioVentaMayorista: number;
       precioUnitario: number;
+      // Productos "servicio" (cancha, pelota): precio editable por el cajero,
+      // sin precio sugerido. `precioServicio` es el monto unitario que tipea.
+      servicio: boolean;
+      precioServicio: number;
     }[]
   >([]);
   const [busqueda, setBusqueda] = useState("");
@@ -78,6 +82,7 @@ export default function Sales() {
       LocalId: string | number;
       ProductoPrecioUnitario: number;
       ProductoStockUnitario?: number;
+      ProductoServicio?: number;
     }[]
   >([]);
   const [loading, setLoading] = useState(false);
@@ -165,6 +170,7 @@ export default function Sales() {
     imagen: string;
     stock: number;
     precioUnitario?: number;
+    servicio?: boolean;
   }) => {
     const tipo = clienteSeleccionado?.ClienteTipo || "MI";
     const precioFinal =
@@ -173,6 +179,7 @@ export default function Sales() {
         : producto.precio;
 
     const precioSeguro = precioFinal ?? 0;
+    const esServicio = !!producto.servicio;
 
     const nuevoCartItemId = Date.now() + Math.random();
     setCarrito([
@@ -187,6 +194,9 @@ export default function Sales() {
         precioVenta: producto.precio,
         precioVentaMayorista: producto.precioMayorista ?? producto.precio,
         precioUnitario: producto.precioUnitario ?? producto.precio,
+        // Servicio: el cajero ingresa el monto, arranca en 0 (sin sugerido).
+        servicio: esServicio,
+        precioServicio: 0,
       },
     ]);
     setSelectedProductId(nuevoCartItemId); // Focus en el input de cantidad del producto nuevo
@@ -208,6 +218,10 @@ export default function Sales() {
 
   // Función para obtener el precio unitario según el check Caja
   const obtenerPrecio = (p: (typeof carrito)[0]) => {
+    // Servicio (cancha/pelota): precio unitario tipeado por el cajero.
+    if (p.servicio) {
+      return p.precioServicio;
+    }
     // Usar los precios guardados en el carrito en lugar de buscar en productos
     if (p.caja) {
       return clienteSeleccionado?.ClienteTipo === "MA"
@@ -228,6 +242,10 @@ export default function Sales() {
 
   // Función para obtener el total según el check Caja
   const obtenerTotal = (p: (typeof carrito)[0]) => {
+    // Servicio (cancha/pelota): total = monto tipeado × cantidad.
+    if (p.servicio) {
+      return p.precioServicio * p.cantidad;
+    }
     // Usar los precios guardados en el carrito en lugar de buscar en productos
     if (p.caja) {
       const precio =
@@ -480,6 +498,21 @@ export default function Sales() {
   }
 
   const sendRequest = async () => {
+    // Los servicios (cancha/pelota) no tienen precio sugerido: el cajero debe
+    // ingresar el monto. No dejamos confirmar con monto 0.
+    const servicioSinPrecio = carrito.find(
+      (p) => p.servicio && (!p.precioServicio || p.precioServicio <= 0),
+    );
+    if (servicioSinPrecio) {
+      setShowModal(false);
+      await Swal.fire({
+        icon: "warning",
+        title: "Falta el precio",
+        text: `Ingresá el monto a cobrar por "${servicioSinPrecio.nombre}".`,
+      });
+      return;
+    }
+
     // Hora local del navegador. El parche UTC-4 viejo era para compensar un
     // bug del JVM/Tomcat de GeneXus que sumaba 1h al guardar; ahora vamos a
     // Node/PG directo y no hace falta.
@@ -687,7 +720,12 @@ export default function Sales() {
       let precioUnitario = 0;
       let precioLabel = "";
       let totalLinea = 0;
-      if (p.caja) {
+      if (p.servicio) {
+        // Servicio (cancha/pelota): precio tipeado por el cajero.
+        precioUnitario = p.precioServicio;
+        precioLabel = "Servicio";
+        totalLinea = p.precioServicio * p.cantidad;
+      } else if (p.caja) {
         // Caja: precio minorista o mayorista
         precioUnitario =
           clienteSeleccionado?.ClienteTipo === "MA"
@@ -828,7 +866,7 @@ export default function Sales() {
     const carritoItems: CarritoItem[] = carrito.map((item) => ({
       nombre: item.nombre,
       cantidad: item.cantidad,
-      precio: item.precio,
+      precio: item.servicio ? item.precioServicio : item.precio,
     }));
 
     generatePresupuestoPDF(carritoItems, clienteSeleccionado || undefined);
@@ -894,6 +932,7 @@ export default function Sales() {
       imagen: resolveProductoImagen(p.ProductoId, p.HasImagen),
       stock: p.ProductoStock,
       precioUnitario: p.ProductoPrecioUnitario,
+      servicio: !!p.ProductoServicio,
     });
   };
 
@@ -1015,33 +1054,59 @@ export default function Sales() {
                             +
                           </button>
                         </div>
-                        <div className="flex items-center mt-1">
-                          <input
-                            type="checkbox"
-                            id={`caja-checkbox-${p.cartItemId}`}
-                            checked={p.caja}
-                            onChange={() =>
-                              setCarrito(
-                                carrito.map((item) =>
-                                  item.cartItemId === p.cartItemId
-                                    ? { ...item, caja: !item.caja }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="cursor-pointer"
-                          />
-                          <label
-                            htmlFor={`caja-checkbox-${p.cartItemId}`}
-                            className="text-lg text-gray-700 cursor-pointer select-none font-medium"
-                          >
-                            Caja
-                          </label>
-                        </div>
+                        {/* El check "Caja" no aplica a servicios (cancha/pelota). */}
+                        {!p.servicio && (
+                          <div className="flex items-center mt-1">
+                            <input
+                              type="checkbox"
+                              id={`caja-checkbox-${p.cartItemId}`}
+                              checked={p.caja}
+                              onChange={() =>
+                                setCarrito(
+                                  carrito.map((item) =>
+                                    item.cartItemId === p.cartItemId
+                                      ? { ...item, caja: !item.caja }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className="cursor-pointer"
+                            />
+                            <label
+                              htmlFor={`caja-checkbox-${p.cartItemId}`}
+                              className="text-lg text-gray-700 cursor-pointer select-none font-medium"
+                            >
+                              Caja
+                            </label>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 align-middle text-right font-medium text-[17px] text-gray-700">
-                      <>Gs. {formatMiles(obtenerPrecio(p))}</>
+                      {p.servicio ? (
+                        <input
+                          type="number"
+                          min={0}
+                          // Vacío cuando es 0 para que el cajero vea que debe
+                          // ingresar el monto (no hay precio sugerido).
+                          value={p.precioServicio === 0 ? "" : p.precioServicio}
+                          placeholder="0"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value) || 0);
+                            setCarrito(
+                              carrito.map((item) =>
+                                item.cartItemId === p.cartItemId
+                                  ? { ...item, precioServicio: val }
+                                  : item,
+                              ),
+                            );
+                          }}
+                          className="w-28 h-9 text-right border border-blue-300 rounded bg-blue-50 px-2 text-[17px] font-semibold text-[#222] focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                        />
+                      ) : (
+                        <>Gs. {formatMiles(obtenerPrecio(p))}</>
+                      )}
                     </td>
                     <td className="py-3 pr-6 align-middle text-right font-medium text-[17px] text-gray-700">
                       Gs. {formatMiles(obtenerTotal(p))}
@@ -1227,6 +1292,7 @@ export default function Sales() {
                         imagen: resolveProductoImagen(p.ProductoId, p.HasImagen),
                         stock: p.ProductoStock,
                         precioUnitario: p.ProductoPrecioUnitario,
+                        servicio: !!p.ProductoServicio,
                       })
                     }
                     precioUnitario={p.ProductoPrecioUnitario}

@@ -13,6 +13,7 @@ const PRODUCTO_LIST_COLS = `
   p.ProductoStock, p.ProductoStockUnitario,
   p.ProductoCantidadCaja, p.ProductoIVA,
   p.ProductoStockMinimo, p.ProductoImagen_GXI,
+  p.ProductoServicio,
   p.LocalId,
   (LENGTH(p.ProductoImagen) > 0) AS HasImagen
 `;
@@ -286,10 +287,11 @@ const Producto = {
           ProductoCantidadCaja,
           ProductoIVA,
           ProductoStockMinimo,
+          ProductoServicio,
           ProductoImagen,
           ProductoImagen_GXI,
           LocalId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
         productoData.ProductoCodigo,
@@ -303,6 +305,7 @@ const Producto = {
         productoData.ProductoCantidadCaja,
         productoData.ProductoIVA,
         productoData.ProductoStockMinimo,
+        productoData.ProductoServicio ? 1 : 0,
         imagenBuffer,
         productoData.ProductoImagen_GXI || null,
         productoData.LocalId,
@@ -362,6 +365,7 @@ const Producto = {
         "ProductoCantidadCaja",
         "ProductoIVA",
         "ProductoStockMinimo",
+        "ProductoServicio",
         "ProductoImagen",
         "ProductoImagen_GXI",
         "LocalId",

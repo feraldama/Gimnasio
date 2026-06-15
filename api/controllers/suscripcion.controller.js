@@ -6,12 +6,17 @@ exports.getAll = async (req, res) => {
   const offset = (page - 1) * limit;
   const sortBy = req.query.sortBy || "SuscripcionId";
   const sortOrder = req.query.sortOrder || "ASC";
+  const filters = {
+    estado: req.query.estado || undefined,
+    pago: req.query.pago || undefined,
+  };
   try {
     const result = await Suscripcion.getAllPaginated(
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      filters
     );
     res.json({
       data: result.suscripciones,
@@ -95,6 +100,10 @@ exports.searchSuscripciones = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "SuscripcionId";
     const sortOrder = req.query.sortOrder || "ASC";
+    const filters = {
+      estado: req.query.estado || undefined,
+      pago: req.query.pago || undefined,
+    };
 
     if (!searchTerm || searchTerm.trim() === "") {
       return res
@@ -107,7 +116,8 @@ exports.searchSuscripciones = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      filters
     );
 
     res.json({

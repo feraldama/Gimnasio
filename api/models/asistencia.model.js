@@ -97,47 +97,63 @@ const Asistencia = {
   // Registra la asistencia. Si la suscripcion activa es de modalidad CLASES,
   // descuenta 1 del cupo (`SuscripcionClasesRestantes`) en la misma operacion.
   // `suscripcion` viene del resultado de `estadoAcceso` para evitar otra query.
-  registrar: (clienteId, suscripcion) => {
-    return new Promise((resolve, reject) => {
-      const hoy = todayLocalISO();
-      const sql = `
-        INSERT INTO asistencia (ClienteId, AsistenciaFecha, AsistenciaHoraEntrada)
-        VALUES (?, ?, NOW())
-      `;
-      db.query(sql, [clienteId, hoy], (err, result) => {
-        if (err) return reject(err);
-        const finish = () => {
-          db.query(
-            "SELECT * FROM asistencia WHERE AsistenciaId = ?",
-            [result.insertId],
-            (err2, rows) => {
-              if (err2) return reject(err2);
-              resolve(rows[0] || null);
-            }
-          );
-        };
-        if (
-          suscripcion &&
-          suscripcion.PlanModalidad === "CLASES" &&
-          suscripcion.SuscripcionId
-        ) {
-          // Atomic decrement guarded por >0 para evitar negativos en concurrencia.
-          db.query(
-            `UPDATE suscripcion
-                SET SuscripcionClasesRestantes = SuscripcionClasesRestantes - 1
-              WHERE SuscripcionId = ?
-                AND SuscripcionClasesRestantes > 0`,
-            [suscripcion.SuscripcionId],
-            (err3) => {
-              if (err3) return reject(err3);
-              finish();
-            }
-          );
-        } else {
-          finish();
+  registrar: async (clienteId, suscripcion) => {
+    const hoy = todayLocalISO();
+    const esClases =
+      !!suscripcion &&
+      suscripcion.PlanModalidad === "CLASES" &&
+      !!suscripcion.SuscripcionId;
+
+    // INSERT de asistencia + descuento de cupo en UNA transacción. Sin esto,
+    // un fallo del UPDATE tras un INSERT exitoso dejaba la entrada registrada
+    // sin descontar; y al no chequear affectedRows, una carrera podía registrar
+    // el ingreso con el cupo ya en 0 (TOCTOU). Ahora es atómico y, si el cupo
+    // se agotó entre la validación y el registro, se aborta todo.
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [ins] = await conn.query(
+        `INSERT INTO asistencia (ClienteId, AsistenciaFecha, AsistenciaHoraEntrada)
+         VALUES (?, ?, NOW())`,
+        [clienteId, hoy]
+      );
+
+      let clasesRestantes = null;
+      if (esClases) {
+        const [upd] = await conn.query(
+          `UPDATE suscripcion
+              SET SuscripcionClasesRestantes = SuscripcionClasesRestantes - 1
+            WHERE SuscripcionId = ?
+              AND SuscripcionClasesRestantes > 0`,
+          [suscripcion.SuscripcionId]
+        );
+        if (!upd.affectedRows) {
+          await conn.rollback();
+          const e = new Error("Cupo de clases agotado");
+          e.code = "SIN_CUPO";
+          throw e;
         }
-      });
-    });
+        const [rows] = await conn.query(
+          "SELECT SuscripcionClasesRestantes FROM suscripcion WHERE SuscripcionId = ?",
+          [suscripcion.SuscripcionId]
+        );
+        clasesRestantes = rows[0]?.SuscripcionClasesRestantes ?? null;
+      }
+
+      const [aRows] = await conn.query(
+        "SELECT * FROM asistencia WHERE AsistenciaId = ?",
+        [ins.insertId]
+      );
+
+      await conn.commit();
+      return { asistencia: aRows[0] || null, clasesRestantes };
+    } catch (err) {
+      await conn.rollback().catch(() => {});
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
 
   /**

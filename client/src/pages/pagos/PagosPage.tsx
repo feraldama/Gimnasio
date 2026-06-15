@@ -4,8 +4,7 @@ import {
   getPagos,
   deletePago,
   searchPagos,
-  createPago,
-  createPagoLote,
+  submitPagos,
   updatePago,
 } from "../../services/pagos.service";
 import PagosList from "../../components/pagos/PagosList";
@@ -64,6 +63,7 @@ export default function PagosPage() {
   const fetchPagos = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null); // limpiar error previo para no quedar en pantalla muerta
       let data;
       if (appliedSearchTerm) {
         data = await searchPagos(
@@ -157,7 +157,9 @@ export default function PagosPage() {
           });
           setPagosData((prev) => ({
             ...prev,
-            pagos: prev.pagos.filter((pago) => pago.PagoId !== id),
+            pagos: prev.pagos.filter(
+              (pago) => String(pago.PagoId) !== String(id)
+            ),
           }));
         } catch (error: unknown) {
           const err = error as { message?: string };
@@ -189,32 +191,15 @@ export default function PagosPage() {
         await updatePago(currentPago.PagoId, pagoData as Pago);
         mensaje = "Pago actualizado exitosamente";
       } else {
-        const pagos = Array.isArray(pagoData) ? pagoData : [pagoData];
-        if (pagos.length > 1) {
-          // Lote: extraer datos de suscripción del primer pago y enviar todo
-          // en una sola transacción del backend (resuelve rollback parcial).
-          const first = pagos[0];
-          const loteData: Record<string, unknown> = {
-            pagos: pagos.map((p) => ({
-              PagoMonto: p.PagoMonto,
-              PagoTipo: p.PagoTipo,
-              PagoFecha: p.PagoFecha,
-            })),
-          };
-          if (first.SuscripcionId) {
-            loteData.SuscripcionId = first.SuscripcionId;
-          } else {
-            loteData.ClienteId = first.ClienteId;
-            loteData.PlanId = first.PlanId;
-            loteData.SuscripcionFechaInicio = first.SuscripcionFechaInicio;
-            loteData.SuscripcionFechaFin = first.SuscripcionFechaFin;
-          }
-          const response = await createPagoLote(loteData);
-          mensaje = response.message || `${pagos.length} pagos creados exitosamente`;
-        } else {
-          await createPago(pagos[0]);
-          mensaje = "Pago creado exitosamente";
-        }
+        // Single o lote (multi-método) resuelto en el service, en una sola
+        // transacción del backend.
+        const response = await submitPagos(pagoData);
+        const n = Array.isArray(pagoData) ? pagoData.length : 1;
+        mensaje =
+          response?.message ||
+          (n > 1
+            ? `${n} pagos creados exitosamente`
+            : "Pago creado exitosamente");
       }
       setIsModalOpen(false);
       Swal.fire({
@@ -226,11 +211,9 @@ export default function PagosPage() {
       });
       fetchPagos();
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("Error desconocido");
-      }
+      const msg =
+        error instanceof Error ? error.message : "No se pudo guardar el pago";
+      Swal.fire({ icon: "error", title: "Error al guardar", text: msg });
     }
   };
 

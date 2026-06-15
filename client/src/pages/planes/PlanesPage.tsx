@@ -55,6 +55,7 @@ export default function PlanesPage() {
   const fetchPlanes = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null); // limpiar error previo para no quedar en pantalla muerta
       let data;
       if (appliedSearchTerm) {
         data = await searchPlanes(
@@ -121,7 +122,9 @@ export default function PlanesPage() {
           });
           setPlanesData((prev) => ({
             ...prev,
-            planes: prev.planes.filter((plan) => plan.PlanId !== id),
+            planes: prev.planes.filter(
+              (plan) => String(plan.PlanId) !== String(id)
+            ),
           }));
         } catch (error: unknown) {
           const err = error as { message?: string };
@@ -166,11 +169,11 @@ export default function PlanesPage() {
       });
       fetchPlanes();
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("Error desconocido");
-      }
+      // Error de guardado: mostrar como toast, NO romper la pantalla (la lista
+      // sigue visible para reintentar). El modal queda abierto al no cerrarse.
+      const msg =
+        error instanceof Error ? error.message : "No se pudo guardar el plan";
+      Swal.fire({ icon: "error", title: "Error al guardar", text: msg });
     }
   };
 

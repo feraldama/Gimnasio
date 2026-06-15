@@ -22,6 +22,7 @@ import {
   calcularEstadoPorFechas,
   getEstadoDisplay as utilGetEstadoDisplay,
   isEstadoManual as utilIsEstadoManual,
+  estadoBadgeClass,
   type EstadoDisplay,
 } from "../../utils/suscripcionEstado";
 import {
@@ -71,10 +72,15 @@ interface SuscripcionesListProps {
   isModalOpen: boolean;
   onCloseModal: () => void;
   currentSuscripcion?: Suscripcion | null;
-  onSubmit: (formData: Suscripcion) => void;
+  onSubmit: (formData: Suscripcion) => void | Promise<void>;
   sortKey?: string;
   sortOrder?: "asc" | "desc";
   onSort?: (key: string, order: "asc" | "desc") => void;
+  // Filtros controlados por la página (se aplican en el backend).
+  filtroEstado: EstadoDisplay | "TODOS";
+  filtroPago: "TODOS" | "PAGADA" | "PENDIENTE";
+  onFiltroEstadoChange: (v: EstadoDisplay | "TODOS") => void;
+  onFiltroPagoChange: (v: "TODOS" | "PAGADA" | "PENDIENTE") => void;
 }
 
 export default function SuscripcionesList({
@@ -98,13 +104,11 @@ export default function SuscripcionesList({
   sortKey,
   sortOrder,
   onSort,
+  filtroEstado,
+  filtroPago,
+  onFiltroEstadoChange,
+  onFiltroPagoChange,
 }: SuscripcionesListProps) {
-  const [filtroEstado, setFiltroEstado] = useState<EstadoDisplay | "TODOS">(
-    "TODOS"
-  );
-  const [filtroPago, setFiltroPago] = useState<"TODOS" | "PAGADA" | "PENDIENTE">(
-    "TODOS"
-  );
 
   const [formData, setFormData] = useState({
     id: "",
@@ -115,6 +119,7 @@ export default function SuscripcionesList({
     SuscripcionFechaFin: "",
     SuscripcionClasesRestantes: "" as string | number,
   });
+  const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
   const {
     clientes,
@@ -217,8 +222,9 @@ export default function SuscripcionesList({
   // como `selectCliente` / `createAndSelectCliente` y disparan onClienteSelected
   // (que actualiza formData.ClienteId).
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitting) return; // evita doble submit (suscripciones duplicadas)
     if (!clienteSeleccionado || !formData.ClienteId) {
       Swal.fire({
         icon: "warning",
@@ -227,7 +233,23 @@ export default function SuscripcionesList({
       });
       return;
     }
-    onSubmit(formData);
+    // El input guarda SuscripcionClasesRestantes como string|number; lo
+    // normalizamos a number|undefined para que matchee el tipo Suscripcion
+    // (y el backend, que usa COALESCE para no pisar el cupo con vacío).
+    const payload = {
+      ...formData,
+      SuscripcionClasesRestantes:
+        formData.SuscripcionClasesRestantes === "" ||
+        formData.SuscripcionClasesRestantes == null
+          ? undefined
+          : Number(formData.SuscripcionClasesRestantes),
+    };
+    setSubmitting(true);
+    try {
+      await onSubmit(payload);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -287,16 +309,9 @@ export default function SuscripcionesList({
       label: "Estado",
       render: (suscripcion: Suscripcion) => {
         const estado = getEstadoDisplay(suscripcion);
-        const color: Record<string, string> = {
-          ACTIVA: "bg-green-100 text-green-800",
-          VENCIDA: "bg-red-100 text-red-800",
-          FUTURA: "bg-blue-100 text-blue-800",
-          CANCELADA: "bg-gray-200 text-gray-700",
-          SUSPENDIDA: "bg-amber-100 text-amber-800",
-        };
         return (
           <span
-            className={`px-2 py-1 rounded text-xs font-semibold ${color[estado] || ""}`}
+            className={`px-2 py-1 rounded text-xs font-semibold ${estadoBadgeClass(estado)}`}
           >
             {estado}
           </span>
@@ -323,16 +338,9 @@ export default function SuscripcionesList({
     },
   ];
 
-  // Filtros locales: aplican sobre la página actual (no van al backend para
-  // no encadenar otro round-trip). Si quedara vacío después del filtro, el
-  // empty message lo explica.
-  const filtradas = suscripciones.filter((s) => {
-    if (filtroEstado !== "TODOS" && getEstadoDisplay(s) !== filtroEstado)
-      return false;
-    if (filtroPago === "PAGADA" && s.EstadoPago !== "PAGADA") return false;
-    if (filtroPago === "PENDIENTE" && s.EstadoPago === "PAGADA") return false;
-    return true;
-  });
+  // Los filtros de estado/pago se aplican en el BACKEND (controlados por la
+  // página), así el total y la paginación reflejan el universo filtrado, no
+  // solo la página visible.
 
   return (
     <>
@@ -358,11 +366,7 @@ export default function SuscripcionesList({
       </div>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
         <div className="text-sm text-gray-600">
-          Mostrando {filtradas.length}
-          {filtradas.length !== suscripciones.length
-            ? ` de ${suscripciones.length} cargadas`
-            : ""}{" "}
-          (total: {pagination?.totalItems})
+          Mostrando {suscripciones.length} (total: {pagination?.totalItems})
         </div>
         <div className="flex gap-2">
           <div>
@@ -371,7 +375,7 @@ export default function SuscripcionesList({
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
               value={filtroEstado}
               onChange={(e) =>
-                setFiltroEstado(e.target.value as EstadoDisplay | "TODOS")
+                onFiltroEstadoChange(e.target.value as EstadoDisplay | "TODOS")
               }
             >
               <option value="TODOS">Todos</option>
@@ -388,7 +392,9 @@ export default function SuscripcionesList({
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md cursor-pointer"
               value={filtroPago}
               onChange={(e) =>
-                setFiltroPago(e.target.value as "TODOS" | "PAGADA" | "PENDIENTE")
+                onFiltroPagoChange(
+                  e.target.value as "TODOS" | "PAGADA" | "PENDIENTE"
+                )
               }
             >
               <option value="TODOS">Todos</option>
@@ -400,7 +406,7 @@ export default function SuscripcionesList({
       </div>
       <DataTable<Suscripcion>
         columns={columns}
-        data={filtradas}
+        data={suscripciones}
         onEdit={onEdit}
         onDelete={onDelete}
         emptyMessage="No se encontraron suscripciones"
@@ -667,8 +673,15 @@ export default function SuscripcionesList({
               </div>
               <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
                 <ActionButton
-                  label={currentSuscripcion ? "Actualizar" : "Crear"}
+                  label={
+                    submitting
+                      ? "Guardando..."
+                      : currentSuscripcion
+                        ? "Actualizar"
+                        : "Crear"
+                  }
                   type="submit"
+                  disabled={submitting}
                 />
                 <ActionButton
                   label="Cancelar"
@@ -687,7 +700,6 @@ export default function SuscripcionesList({
         onSelect={selectCliente}
         onCreateCliente={createAndSelectCliente}
         currentUserId={user?.id}
-        hideTipo={true}
         showFechaNacimiento={true}
       />
     </>

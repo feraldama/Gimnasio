@@ -40,6 +40,7 @@ interface Producto {
   ProductoCantidadCaja?: number;
   ProductoIVA?: number;
   ProductoStockMinimo?: number;
+  ProductoServicio?: number;
   ProductoImagen?: string;
   ProductoImagen_GXI?: string;
   LocalId: number;

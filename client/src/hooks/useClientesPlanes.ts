@@ -4,19 +4,14 @@ import {
   createCliente as createClienteService,
 } from "../services/clientes.service";
 import { getPlanes } from "../services/planes.service";
+import type { Cliente } from "../components/common/ClienteFormModal";
 import Swal from "sweetalert2";
 
-export interface Cliente {
-  ClienteId: number;
-  ClienteNombre: string;
-  ClienteApellido: string;
-  ClienteRUC: string;
-  ClienteDireccion: string;
-  ClienteTelefono: string;
-  ClienteTipo: string;
-  ClienteFechaNacimiento?: string;
-  UsuarioId: string;
-}
+// Tipo Cliente unificado: usamos el canónico de ClienteFormModal (el que espera
+// ClienteModal) para que no haya dos definiciones divergentes. Antes este hook
+// declaraba su propia versión estricta (ClienteId: number, sin index signature)
+// que no era asignable a la del modal y generaba errores de TS en cada uso.
+export type { Cliente };
 
 export interface Plan {
   PlanId: string | number;

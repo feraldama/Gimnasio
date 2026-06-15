@@ -54,6 +54,38 @@ export const createPagoLote = async (loteData: Record<string, unknown>) => {
   }
 };
 
+/**
+ * Decide entre crear un pago único o un lote (multi-método) y arma el body del
+ * lote a partir del primer pago (SuscripcionId existente, o ClienteId+PlanId+
+ * fechas para crear la suscripción). Centraliza la lógica que estaba duplicada
+ * idéntica entre PagosPage y SuscripcionesPage.
+ */
+export const submitPagos = async (
+  pagoData: Record<string, unknown> | Record<string, unknown>[]
+) => {
+  const pagos = Array.isArray(pagoData) ? pagoData : [pagoData];
+  if (pagos.length > 1) {
+    const first = pagos[0];
+    const loteData: Record<string, unknown> = {
+      pagos: pagos.map((p) => ({
+        PagoMonto: p.PagoMonto,
+        PagoTipo: p.PagoTipo,
+        PagoFecha: p.PagoFecha,
+      })),
+    };
+    if (first.SuscripcionId) {
+      loteData.SuscripcionId = first.SuscripcionId;
+    } else {
+      loteData.ClienteId = first.ClienteId;
+      loteData.PlanId = first.PlanId;
+      loteData.SuscripcionFechaInicio = first.SuscripcionFechaInicio;
+      loteData.SuscripcionFechaFin = first.SuscripcionFechaFin;
+    }
+    return createPagoLote(loteData);
+  }
+  return createPago(pagos[0]);
+};
+
 export const updatePago = async (
   id: string | number,
   pagoData: Record<string, unknown>

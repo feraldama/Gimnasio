@@ -41,7 +41,7 @@ interface PlanesListProps {
   isModalOpen: boolean;
   onCloseModal: () => void;
   currentPlan?: Plan | null;
-  onSubmit: (formData: Plan) => void;
+  onSubmit: (formData: Plan) => void | Promise<void>;
   sortKey?: string;
   sortOrder?: "asc" | "desc";
   onSort?: (key: string, order: "asc" | "desc") => void;
@@ -65,6 +65,7 @@ export default function PlanesList({
   sortOrder,
   onSort,
 }: PlanesListProps) {
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     id: "",
     PlanId: "",
@@ -123,9 +124,15 @@ export default function PlanesList({
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSubmit(formData);
+    if (submitting) return; // evita doble submit
+    setSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -461,8 +468,15 @@ export default function PlanesList({
               </div>
               <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
                 <ActionButton
-                  label={currentPlan ? "Actualizar" : "Crear"}
+                  label={
+                    submitting
+                      ? "Guardando..."
+                      : currentPlan
+                        ? "Actualizar"
+                        : "Crear"
+                  }
                   type="submit"
+                  disabled={submitting}
                 />
                 <ActionButton
                   label="Cancelar"

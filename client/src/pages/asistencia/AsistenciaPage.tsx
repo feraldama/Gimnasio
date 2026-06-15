@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import {
@@ -74,6 +74,10 @@ export default function AsistenciaPage() {
   const [asistencias, setAsistencias] = useState<AsistenciaItem[]>([]);
   const [cargandoLista, setCargandoLista] = useState(false);
   const [fecha, setFecha] = useState(todayLocalISO());
+  // Token de la última consulta de estado de acceso: si el operador cambia de
+  // cliente rápido, descartamos respuestas obsoletas (la que resuelva último
+  // no debe pisar al cliente actualmente seleccionado).
+  const estadoReqRef = useRef(0);
 
   const cargarLista = useCallback(
     async (f: string) => {
@@ -103,11 +107,16 @@ export default function AsistenciaPage() {
   // La firma debe ser síncrona porque ClienteModal.onSelect espera () => void.
   const handleSeleccionarCliente = (cliente: Cliente) => {
     selectCliente(cliente);
+    if (cliente.ClienteId == null) return;
+    const reqId = ++estadoReqRef.current;
     setCargandoEstado(true);
     setEstado(null);
     getEstadoAcceso(cliente.ClienteId)
-      .then(setEstado)
+      .then((data) => {
+        if (reqId === estadoReqRef.current) setEstado(data);
+      })
       .catch((err) => {
+        if (reqId !== estadoReqRef.current) return; // respuesta obsoleta
         const e = err as { message?: string };
         Swal.fire({
           icon: "error",
@@ -115,7 +124,9 @@ export default function AsistenciaPage() {
           text: e?.message || "No se pudo consultar el estado",
         });
       })
-      .finally(() => setCargandoEstado(false));
+      .finally(() => {
+        if (reqId === estadoReqRef.current) setCargandoEstado(false);
+      });
   };
 
   const handleRegistrar = async () => {
@@ -350,7 +361,6 @@ export default function AsistenciaPage() {
         clientes={clientes}
         onSelect={handleSeleccionarCliente}
         currentUserId={user?.id}
-        hideTipo={true}
         showFechaNacimiento={true}
       />
     </div>

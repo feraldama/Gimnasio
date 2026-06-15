@@ -6,10 +6,7 @@ import {
   createSuscripcion,
   updateSuscripcion,
 } from "../../services/suscripciones.service";
-import {
-  createPago,
-  createPagoLote,
-} from "../../services/pagos.service";
+import { submitPagos } from "../../services/pagos.service";
 import SuscripcionesList from "../../components/suscripciones/SuscripcionesList";
 import CrearPagoModal, {
   type PagoSubmitData,
@@ -19,6 +16,16 @@ import Swal from "sweetalert2";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import { addDaysLocal, todayLocalISO } from "../../utils/utils";
+import { type EstadoDisplay } from "../../utils/suscripcionEstado";
+
+// El backend filtra por código de estado (A/V/F/C/S); la UI usa nombres largos.
+const ESTADO_CODE: Record<string, string> = {
+  ACTIVA: "A",
+  VENCIDA: "V",
+  FUTURA: "F",
+  CANCELADA: "C",
+  SUSPENDIDA: "S",
+};
 
 interface Suscripcion {
   id: string | number;
@@ -57,6 +64,12 @@ export default function SuscripcionesPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortKey, setSortKey] = useState<string | undefined>("SuscripcionId");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [filtroEstado, setFiltroEstado] = useState<EstadoDisplay | "TODOS">(
+    "TODOS"
+  );
+  const [filtroPago, setFiltroPago] = useState<"TODOS" | "PAGADA" | "PENDIENTE">(
+    "TODOS"
+  );
   const [pagoModalOpen, setPagoModalOpen] = useState(false);
   const [renovarSuscripcion, setRenovarSuscripcion] =
     useState<Suscripcion | null>(null);
@@ -70,6 +83,10 @@ export default function SuscripcionesPage() {
   const fetchSuscripciones = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null); // limpiar error previo para no quedar en pantalla muerta
+      const estadoParam =
+        filtroEstado !== "TODOS" ? ESTADO_CODE[filtroEstado] : undefined;
+      const pagoParam = filtroPago !== "TODOS" ? filtroPago : undefined;
       let data;
       if (appliedSearchTerm) {
         data = await searchSuscripciones(
@@ -77,14 +94,18 @@ export default function SuscripcionesPage() {
           currentPage,
           itemsPerPage,
           sortKey,
-          sortOrder
+          sortOrder,
+          estadoParam,
+          pagoParam
         );
       } else {
         data = await getSuscripciones(
           currentPage,
           itemsPerPage,
           sortKey,
-          sortOrder
+          sortOrder,
+          estadoParam,
+          pagoParam
         );
       }
       setSuscripcionesData({
@@ -100,7 +121,25 @@ export default function SuscripcionesPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, appliedSearchTerm, itemsPerPage, sortKey, sortOrder]);
+  }, [
+    currentPage,
+    appliedSearchTerm,
+    itemsPerPage,
+    sortKey,
+    sortOrder,
+    filtroEstado,
+    filtroPago,
+  ]);
+
+  // Cambiar un filtro resetea a la primera página (server-side).
+  const handleFiltroEstado = (v: EstadoDisplay | "TODOS") => {
+    setFiltroEstado(v);
+    setCurrentPage(1);
+  };
+  const handleFiltroPago = (v: "TODOS" | "PAGADA" | "PENDIENTE") => {
+    setFiltroPago(v);
+    setCurrentPage(1);
+  };
 
   useEffect(() => {
     fetchSuscripciones();
@@ -142,7 +181,7 @@ export default function SuscripcionesPage() {
           setSuscripcionesData((prev) => ({
             ...prev,
             suscripciones: prev.suscripciones.filter(
-              (suscripcion) => suscripcion.SuscripcionId !== id
+              (suscripcion) => String(suscripcion.SuscripcionId) !== String(id)
             ),
           }));
         } catch (error: unknown) {
@@ -264,28 +303,7 @@ export default function SuscripcionesPage() {
 
   const handlePagoSubmit = async (pagoData: PagoSubmitData) => {
     try {
-      const pagos = Array.isArray(pagoData) ? pagoData : [pagoData];
-      if (pagos.length > 1) {
-        const first = pagos[0];
-        const loteData: Record<string, unknown> = {
-          pagos: pagos.map((p) => ({
-            PagoMonto: p.PagoMonto,
-            PagoTipo: p.PagoTipo,
-            PagoFecha: p.PagoFecha,
-          })),
-        };
-        if (first.SuscripcionId) {
-          loteData.SuscripcionId = first.SuscripcionId;
-        } else {
-          loteData.ClienteId = first.ClienteId;
-          loteData.PlanId = first.PlanId;
-          loteData.SuscripcionFechaInicio = first.SuscripcionFechaInicio;
-          loteData.SuscripcionFechaFin = first.SuscripcionFechaFin;
-        }
-        await createPagoLote(loteData);
-      } else {
-        await createPago(pagos[0]);
-      }
+      await submitPagos(pagoData);
       setPagoModalOpen(false);
       setRenovarSuscripcion(null);
       Swal.fire({
@@ -329,11 +347,11 @@ export default function SuscripcionesPage() {
       });
       fetchSuscripciones();
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("Error desconocido");
-      }
+      const msg =
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar la suscripción";
+      Swal.fire({ icon: "error", title: "Error al guardar", text: msg });
     }
   };
 
@@ -390,6 +408,10 @@ export default function SuscripcionesPage() {
           setSortOrder(order);
           setCurrentPage(1);
         }}
+        filtroEstado={filtroEstado}
+        filtroPago={filtroPago}
+        onFiltroEstadoChange={handleFiltroEstado}
+        onFiltroPagoChange={handleFiltroPago}
       />
       <Pagination
         currentPage={currentPage}

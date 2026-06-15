@@ -46,7 +46,7 @@ export type PagoSubmitData = Pago | Pago[];
 interface CrearPagoModalProps {
   show: boolean;
   onClose: () => void;
-  onSubmit: (formData: PagoSubmitData) => void;
+  onSubmit: (formData: PagoSubmitData) => void | Promise<void>;
   currentPago?: Pago | null;
   initialSuscripcion?: Suscripcion | null;
   /** "existente" = pago de suscripción existente, "nueva" = crear nueva suscripción con cliente/plan pre-seleccionados */
@@ -81,6 +81,7 @@ export default function CrearPagoModal({
     SuscripcionFechaFin: "",
   });
   const [fechaError, setFechaError] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
   const {
     clientes,
@@ -352,8 +353,9 @@ export default function CrearPagoModal({
   // selectCliente / createAndSelectCliente vienen del hook useClientesPlanes.
   // El callback onClienteSelected del hook ya actualiza suscripcionFormData.ClienteId.
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitting) return; // evita doble submit (pagos duplicados)
     if (tipoPago === "nueva") {
       if (!suscripcionFormData.ClienteId || !clienteSeleccionado) {
         Swal.fire({
@@ -436,7 +438,12 @@ export default function CrearPagoModal({
         SuscripcionId: formData.SuscripcionId,
         PagoUsuarioId: user?.id || formData.PagoUsuarioId,
       } as Pago;
-      onSubmit(formDataToSubmit);
+      setSubmitting(true);
+      try {
+        await onSubmit(formDataToSubmit);
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
 
@@ -502,7 +509,12 @@ export default function CrearPagoModal({
       } as Pago);
     }
 
-    onSubmit(pagosToCreate);
+    setSubmitting(true);
+    try {
+      await onSubmit(pagosToCreate);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -972,9 +984,14 @@ export default function CrearPagoModal({
             <div className="flex-shrink-0 flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b bg-white">
               <button
                 type="submit"
-                className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center cursor-pointer"
+                disabled={submitting}
+                className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {currentPago ? "Actualizar" : "Crear"}
+                {submitting
+                  ? "Guardando..."
+                  : currentPago
+                    ? "Actualizar"
+                    : "Crear"}
               </button>
               <button
                 type="button"
@@ -994,7 +1011,6 @@ export default function CrearPagoModal({
         onSelect={selectCliente}
         onCreateCliente={createAndSelectCliente}
         currentUserId={user?.id}
-        hideTipo={true}
         showFechaNacimiento={true}
       />
     </>

@@ -3,6 +3,70 @@ const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
 const { escapeLike } = require("../utils/sql");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
 
+/**
+ * Recalcula el estado de VIGENCIA al vuelo a partir de las fechas, en lugar de
+ * confiar en la columna `SuscripcionEstado` (que se congela al crear/editar y
+ * no refleja el paso del tiempo). Preserva los estados MANUALES C (Cancelada)
+ * y S (Suspendida), que no dependen de fechas. Así los listados/reportes que
+ * pasan por el modelo siempre devuelven A/V/F correctos para "hoy".
+ */
+function conEstadoVigente(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((r) => {
+    if (!r || r.SuscripcionEstado === "C" || r.SuscripcionEstado === "S") {
+      return r;
+    }
+    return {
+      ...r,
+      SuscripcionEstado: calcularEstadoPorFechas(
+        r.SuscripcionFechaInicio,
+        r.SuscripcionFechaFin
+      ),
+    };
+  });
+}
+
+/**
+ * Construye condiciones WHERE para filtrar suscripciones en el backend (en vez
+ * de filtrar la página visible en el cliente, que daba resultados engañosos).
+ *   - filters.estado: 'A' | 'V' | 'F' | 'C' | 'S' (vigencia calculada por fechas;
+ *     C/S son manuales). Requiere alias `s` de suscripcion.
+ *   - filters.pago: 'PAGADA' | 'PENDIENTE'. Requiere alias `p` (plan) y el join
+ *     LATERAL `pg` con `pg.totalpagado`.
+ * Devuelve { conds: string[], params: any[] } para intercalar en la query.
+ */
+function buildSuscripcionFilters(filters = {}) {
+  const conds = [];
+  const params = [];
+  const estado = filters.estado;
+  if (estado === "C" || estado === "S") {
+    conds.push("s.SuscripcionEstado = ?");
+    params.push(estado);
+  } else if (estado === "A") {
+    conds.push(
+      "s.SuscripcionEstado NOT IN ('C','S') AND DATE(?) BETWEEN DATE(s.SuscripcionFechaInicio) AND DATE(s.SuscripcionFechaFin)"
+    );
+    params.push(todayLocalISO());
+  } else if (estado === "V") {
+    conds.push(
+      "s.SuscripcionEstado NOT IN ('C','S') AND DATE(s.SuscripcionFechaFin) < DATE(?)"
+    );
+    params.push(todayLocalISO());
+  } else if (estado === "F") {
+    conds.push(
+      "s.SuscripcionEstado NOT IN ('C','S') AND DATE(s.SuscripcionFechaInicio) > DATE(?)"
+    );
+    params.push(todayLocalISO());
+  }
+  const pago = filters.pago;
+  if (pago === "PAGADA") {
+    conds.push("(COALESCE(p.PlanPrecio,0) = 0 OR pg.totalpagado >= p.PlanPrecio)");
+  } else if (pago === "PENDIENTE") {
+    conds.push("(COALESCE(p.PlanPrecio,0) > 0 AND pg.totalpagado < p.PlanPrecio)");
+  }
+  return { conds, params };
+}
+
 const Suscripcion = {
   getAll: () => {
     return new Promise((resolve, reject) => {
@@ -18,14 +82,14 @@ const Suscripcion = {
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
-        LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
-          FROM pago GROUP BY SuscripcionId
-        ) pg ON pg.SuscripcionId = s.SuscripcionId
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+          FROM pago WHERE SuscripcionId = s.SuscripcionId
+        ) pg ON true
       `;
       db.query(query, (err, results) => {
-        if (err) reject(err);
-        resolve(results);
+        if (err) return reject(err);
+        resolve(conEstadoVigente(results));
       });
     });
   },
@@ -43,7 +107,7 @@ const Suscripcion = {
       `;
       db.query(query, [id], (err, results) => {
         if (err) return reject(err);
-        resolve(results.length > 0 ? results[0] : null);
+        resolve(results.length > 0 ? conEstadoVigente(results)[0] : null);
       });
     });
   },
@@ -155,6 +219,7 @@ const Suscripcion = {
     offset,
     sortBy = "SuscripcionId",
     sortOrder = "ASC",
+    filters = {},
   ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
@@ -184,6 +249,9 @@ const Suscripcion = {
         orderByField = `s.${sortField}`;
       }
 
+      const { conds, params: filterParams } = buildSuscripcionFilters(filters);
+      const whereSql = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+
       const query = `
         SELECT s.*,
           c.ClienteNombre, c.ClienteApellido,
@@ -196,28 +264,38 @@ const Suscripcion = {
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
-        LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
-          FROM pago GROUP BY SuscripcionId
-        ) pg ON pg.SuscripcionId = s.SuscripcionId
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+          FROM pago WHERE SuscripcionId = s.SuscripcionId
+        ) pg ON true
+        ${whereSql}
         ORDER BY ${orderByField} ${order}
         LIMIT ? OFFSET ?
       `;
 
-      db.query(query, [limit, offset], (err, results) => {
+      db.query(query, [...filterParams, limit, offset], (err, results) => {
         if (err) return reject(err);
 
-        db.query(
-          "SELECT COUNT(*) as total FROM suscripcion",
-          (err, countResult) => {
-            if (err) return reject(err);
+        // El COUNT debe replicar los joins que usan los filtros (plan para
+        // PlanPrecio, LATERAL pago para totalpagado) y el mismo WHERE.
+        const countQuery = `
+          SELECT COUNT(*) as total
+          FROM suscripcion s
+          LEFT JOIN plan p ON s.PlanId = p.PlanId
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+            FROM pago WHERE SuscripcionId = s.SuscripcionId
+          ) pg ON true
+          ${whereSql}
+        `;
+        db.query(countQuery, filterParams, (err, countResult) => {
+          if (err) return reject(err);
 
-            resolve({
-              suscripciones: results,
-              total: countResult[0].total,
-            });
-          },
-        );
+          resolve({
+            suscripciones: conEstadoVigente(results),
+            total: countResult[0].total,
+          });
+        });
       });
     });
   },
@@ -228,6 +306,7 @@ const Suscripcion = {
     offset,
     sortBy = "SuscripcionId",
     sortOrder = "ASC",
+    filters = {},
   ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
@@ -256,6 +335,9 @@ const Suscripcion = {
         orderByField = `s.${sortField}`;
       }
 
+      const { conds, params: filterParams } = buildSuscripcionFilters(filters);
+      const filterAnd = conds.length ? ` AND ${conds.join(" AND ")}` : "";
+
       // El operador de mostrador busca por cédula/RUC casi siempre. Agregamos
       // ClienteRUC al OR para evitar tener que ir a Clientes primero a buscar
       // por nombre + copiar el ID.
@@ -271,15 +353,17 @@ const Suscripcion = {
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
-        LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
-          FROM pago GROUP BY SuscripcionId
-        ) pg ON pg.SuscripcionId = s.SuscripcionId
-        WHERE c.ClienteNombre LIKE ?
-        OR c.ClienteApellido LIKE ?
-        OR c.ClienteRUC LIKE ?
-        OR p.PlanNombre LIKE ?
-        OR CAST(s.SuscripcionId AS CHAR) LIKE ?
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+          FROM pago WHERE SuscripcionId = s.SuscripcionId
+        ) pg ON true
+        WHERE (
+          c.ClienteNombre LIKE ?
+          OR c.ClienteApellido LIKE ?
+          OR c.ClienteRUC LIKE ?
+          OR p.PlanNombre LIKE ?
+          OR CAST(s.SuscripcionId AS CHAR) LIKE ?
+        )${filterAnd}
         ORDER BY ${orderByField} ${order}
         LIMIT ? OFFSET ?
       `;
@@ -293,6 +377,7 @@ const Suscripcion = {
           searchValue,
           searchValue,
           searchValue,
+          ...filterParams,
           limit,
           offset,
         ],
@@ -304,11 +389,17 @@ const Suscripcion = {
             FROM suscripcion s
             LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
             LEFT JOIN plan p ON s.PlanId = p.PlanId
-            WHERE c.ClienteNombre LIKE ?
-            OR c.ClienteApellido LIKE ?
-            OR c.ClienteRUC LIKE ?
-            OR p.PlanNombre LIKE ?
-            OR CAST(s.SuscripcionId AS CHAR) LIKE ?
+            LEFT JOIN LATERAL (
+              SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+              FROM pago WHERE SuscripcionId = s.SuscripcionId
+            ) pg ON true
+            WHERE (
+              c.ClienteNombre LIKE ?
+              OR c.ClienteApellido LIKE ?
+              OR c.ClienteRUC LIKE ?
+              OR p.PlanNombre LIKE ?
+              OR CAST(s.SuscripcionId AS CHAR) LIKE ?
+            )${filterAnd}
           `;
           db.query(
             countQuery,
@@ -318,11 +409,12 @@ const Suscripcion = {
               searchValue,
               searchValue,
               searchValue,
+              ...filterParams,
             ],
             (err, countResult) => {
               if (err) return reject(err);
               resolve({
-                suscripciones: results,
+                suscripciones: conEstadoVigente(results),
                 total: countResult[0]?.total || 0,
               });
             },
@@ -347,16 +439,16 @@ const Suscripcion = {
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
-        LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
-          FROM pago GROUP BY SuscripcionId
-        ) pg ON pg.SuscripcionId = s.SuscripcionId
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+          FROM pago WHERE SuscripcionId = s.SuscripcionId
+        ) pg ON true
         WHERE s.ClienteId = ?
         ORDER BY s.SuscripcionFechaInicio DESC
       `;
       db.query(query, [clienteId], (err, results) => {
         if (err) return reject(err);
-        resolve(results);
+        resolve(conEstadoVigente(results));
       });
     });
   },
@@ -383,17 +475,23 @@ const Suscripcion = {
           END as EstadoPago
         FROM suscripcion s
         INNER JOIN (
+          -- La "vigencia más lejana" por cliente se calcula SOLO sobre
+          -- suscripciones no canceladas/suspendidas. Si no, una suscripción
+          -- cancelada con fecha fin lejana (o una futura cancelada) ganaba el
+          -- MAX y el cliente desaparecía del aviso aunque tuviera una vigente
+          -- venciendo en días.
           SELECT ClienteId, MAX(SuscripcionFechaFin) as maxfechafin
           FROM suscripcion
           WHERE SuscripcionFechaFin IS NOT NULL
+            AND SuscripcionEstado NOT IN ('C', 'S')
           GROUP BY ClienteId
         ) latest ON s.ClienteId = latest.ClienteId AND s.SuscripcionFechaFin = latest.maxfechafin
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
-        LEFT JOIN (
-          SELECT SuscripcionId, SUM(PagoMonto) as totalpagado
-          FROM pago GROUP BY SuscripcionId
-        ) pg ON pg.SuscripcionId = s.SuscripcionId
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+          FROM pago WHERE SuscripcionId = s.SuscripcionId
+        ) pg ON true
         WHERE s.SuscripcionFechaFin IS NOT NULL
           AND s.SuscripcionEstado NOT IN ('C', 'S')
           AND DATE(s.SuscripcionFechaFin) >= DATE(?)
@@ -408,7 +506,7 @@ const Suscripcion = {
 
       db.query(query, params, (err, results) => {
         if (err) return reject(err);
-        resolve(results);
+        resolve(conEstadoVigente(results));
       });
     });
   },

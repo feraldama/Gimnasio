@@ -128,6 +128,7 @@ module.exports = {
   "productocantidadcaja": "ProductoCantidadCaja",
   "productoiva": "ProductoIVA",
   "productostockminimo": "ProductoStockMinimo",
+  "productoservicio": "ProductoServicio",
   "productoimagen": "ProductoImagen",
   "productoimagen_gxi": "ProductoImagen_GXI",
   "productoalmacenstock": "ProductoAlmacenStock",

@@ -33,6 +33,7 @@ interface Producto {
   ProductoCantidadCaja?: number;
   ProductoIVA?: number;
   ProductoStockMinimo?: number;
+  ProductoServicio?: number;
   ProductoImagen?: string;
   ProductoImagen_GXI?: string;
   LocalId: number;
@@ -153,6 +154,7 @@ export default function ProductsList({
     ProductoCantidadCaja: 1,
     ProductoIVA: 0,
     ProductoStockMinimo: 0,
+    ProductoServicio: 0,
     ProductoImagen: "",
     ProductoImagen_GXI: "",
     LocalId: 1,
@@ -210,6 +212,7 @@ export default function ProductsList({
         ProductoCantidadCaja: currentProduct.ProductoCantidadCaja || 0,
         ProductoIVA: currentProduct.ProductoIVA || 0,
         ProductoStockMinimo: currentProduct.ProductoStockMinimo || 0,
+        ProductoServicio: Number(currentProduct.ProductoServicio) || 0,
         ProductoImagen: currentProduct.ProductoImagen || "",
         ProductoImagen_GXI: currentProduct.ProductoImagen_GXI || "",
         LocalId: currentProduct.LocalId,
@@ -228,6 +231,7 @@ export default function ProductsList({
         ProductoCantidadCaja: 1,
         ProductoIVA: 0,
         ProductoStockMinimo: 0,
+        ProductoServicio: 0,
         ProductoImagen: "",
         ProductoImagen_GXI: "",
         LocalId: 1,
@@ -1052,6 +1056,35 @@ export default function ProductsList({
                         </option>
                       ))}
                     </select>
+                  </div>
+                  {/* Producto servicio: precio editable en POS y sin stock */}
+                  <div className="col-span-6">
+                    <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <input
+                        type="checkbox"
+                        name="ProductoServicio"
+                        id="ProductoServicio"
+                        checked={Number(formData.ProductoServicio) === 1}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            ProductoServicio: e.target.checked ? 1 : 0,
+                          }))
+                        }
+                        className="mt-0.5 w-4 h-4 cursor-pointer"
+                      />
+                      <label
+                        htmlFor="ProductoServicio"
+                        className="text-sm text-gray-800 cursor-pointer select-none"
+                      >
+                        <span className="font-medium">Es servicio</span> (cancha,
+                        pelota, etc.)
+                        <span className="block text-gray-500">
+                          El cajero ingresa el precio en cada venta y el producto
+                          no controla stock.
+                        </span>
+                      </label>
+                    </div>
                   </div>
                   {/* Imagen: solo mostrar base64 si existe */}
                   <div className="col-span-6">

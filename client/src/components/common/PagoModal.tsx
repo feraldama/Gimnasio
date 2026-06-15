@@ -38,6 +38,7 @@ const PagoModal: React.FC<PagoModalProps> = ({
   const [monto, setMonto] = useState<number | "">("");
   const [tiposGasto, setTiposGasto] = useState<TipoGasto[]>([]);
   const [tiposGastoGrupo, setTiposGastoGrupo] = useState<TipoGastoGrupo[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (show) {
@@ -58,6 +59,8 @@ const PagoModal: React.FC<PagoModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cajaAperturada || !usuario) return;
+    if (submitting) return; // evita doble registro de caja
+    setSubmitting(true);
     try {
       await createRegistroDiarioCaja({
         CajaId: cajaAperturada.CajaId,
@@ -101,6 +104,8 @@ const PagoModal: React.FC<PagoModalProps> = ({
       const errorMsg =
         err instanceof Error ? err.message : "No se pudo registrar el pago";
       Swal.fire("Error", errorMsg, "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -206,9 +211,10 @@ const PagoModal: React.FC<PagoModalProps> = ({
           <div className="flex justify-end gap-2 mt-4">
             <button
               type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+              disabled={submitting}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Guardar
+              {submitting ? "Guardando..." : "Guardar"}
             </button>
             <button
               type="button"

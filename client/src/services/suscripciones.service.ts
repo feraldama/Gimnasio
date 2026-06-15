@@ -5,7 +5,9 @@ export const getSuscripciones = async (
   page = 1,
   limit = 10,
   sortBy?: string,
-  sortOrder?: "asc" | "desc"
+  sortOrder?: "asc" | "desc",
+  estado?: string,
+  pago?: string
 ) => {
   const params: { [key: string]: string | number | undefined } = {
     page,
@@ -13,6 +15,8 @@ export const getSuscripciones = async (
   };
   if (sortBy) params.sortBy = sortBy;
   if (sortOrder) params.sortOrder = sortOrder;
+  if (estado) params.estado = estado;
+  if (pago) params.pago = pago;
   try {
     const response = await api.get("/suscripciones", { params });
     return response.data;
@@ -84,7 +88,9 @@ export const searchSuscripciones = async (
   page = 1,
   limit = 10,
   sortBy?: string,
-  sortOrder?: "asc" | "desc"
+  sortOrder?: "asc" | "desc",
+  estado?: string,
+  pago?: string
 ) => {
   const params: { [key: string]: string | number | undefined } = {
     q: searchTerm,
@@ -93,6 +99,8 @@ export const searchSuscripciones = async (
   };
   if (sortBy) params.sortBy = sortBy;
   if (sortOrder) params.sortOrder = sortOrder;
+  if (estado) params.estado = estado;
+  if (pago) params.pago = pago;
   try {
     const response = await api.get("/suscripciones/search", { params });
     return response.data;

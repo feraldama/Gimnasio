@@ -220,13 +220,18 @@ exports.delete = async (req, res) => {
       const unidad = vp.VentaProductoUnitario === "U" ? "U" : "C";
 
       const [prodRows] = await conn.query(
-        `SELECT ProductoCantidadCaja, ProductoStock, ProductoStockUnitario
+        `SELECT ProductoCantidadCaja, ProductoStock, ProductoStockUnitario, ProductoServicio
          FROM producto WHERE ProductoId = ?`,
         [productoId]
       );
       if (!prodRows.length) continue;
       const prod = prodRows[0];
       const cantidadCaja = Number(prod.ProductoCantidadCaja);
+
+      // Productos servicio no llevan inventario: no se repone stock.
+      if (Number(prod.ProductoServicio) === 1) {
+        continue;
+      }
 
       if (unidad === "U") {
         const nProd = sumarUnidades(
@@ -482,7 +487,7 @@ exports.confirmar = async (req, res) => {
 
       // Snapshot del producto para precio promedio + cantidad por caja.
       const [prodRows] = await conn.query(
-        `SELECT ProductoPrecioPromedio, ProductoCantidadCaja, ProductoStock, ProductoStockUnitario
+        `SELECT ProductoPrecioPromedio, ProductoCantidadCaja, ProductoStock, ProductoStockUnitario, ProductoServicio
          FROM producto WHERE ProductoId = ?`,
         [productoId]
       );
@@ -491,6 +496,9 @@ exports.confirmar = async (req, res) => {
       }
       const prod = prodRows[0];
       const cantidadCaja = Number(prod.ProductoCantidadCaja);
+      // Productos "servicio" (cancha, pelota): no llevan inventario, no se
+      // descuenta stock al vender.
+      const esServicio = Number(prod.ProductoServicio) === 1;
       const precioPromedioBase = Number(prod.ProductoPrecioPromedio);
       // VentaProductoPrecioPromedio es BIGINT, GeneXus trunca implícitamente al asignar.
       const precioPromedioLinea = Math.round(
@@ -523,8 +531,10 @@ exports.confirmar = async (req, res) => {
         ]
       );
 
-      // Descuento de stock.
-      if (unidad === "U") {
+      // Descuento de stock (se omite para productos servicio).
+      if (esServicio) {
+        // Sin inventario: no se toca producto ni productoalmacen.
+      } else if (unidad === "U") {
         const nProd = restarUnidades(
           prod.ProductoStock,
           prod.ProductoStockUnitario,
@@ -726,7 +736,7 @@ exports.devolucion = async (req, res) => {
       const unidad = p.ProductoUnidad === "U" ? "U" : "C";
 
       const [prodRows] = await conn.query(
-        `SELECT ProductoCantidadCaja, ProductoStock, ProductoStockUnitario
+        `SELECT ProductoCantidadCaja, ProductoStock, ProductoStockUnitario, ProductoServicio
          FROM producto WHERE ProductoId = ?`,
         [productoId]
       );
@@ -735,6 +745,11 @@ exports.devolucion = async (req, res) => {
       }
       const prod = prodRows[0];
       const cantidadCaja = Number(prod.ProductoCantidadCaja);
+
+      // Productos servicio no llevan inventario: no se repone stock.
+      if (Number(prod.ProductoServicio) === 1) {
+        continue;
+      }
 
       if (unidad === "U") {
         const nProd = sumarUnidades(
