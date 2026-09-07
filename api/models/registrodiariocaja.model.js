@@ -1,4 +1,9 @@
 const db = require("../config/db");
+const {
+  TIPO_GASTO_APERTURA,
+  TIPO_GASTO_CIERRE,
+  TIPO_GASTO_GRUPO_CAJA,
+} = require("../utils/cajaApertura");
 
 /**
  * Normaliza RegistroDiarioCajaFecha para que siempre incluya fecha y hora.
@@ -371,6 +376,76 @@ const RegistroDiarioCaja = {
         }
       );
     });
+  },
+
+  /**
+   * Ejecuta la apertura o el cierre de caja en UNA transacción.
+   *
+   * Antes esto vivía en el controlador como dos operaciones sueltas y sin
+   * transacción, y el orden del cierre era peligroso: primero
+   * `UPDATE Caja SET CajaMonto = 0` y después el INSERT del registro. Si el
+   * INSERT fallaba, el cajón quedaba en cero SIN registro de cierre — y como
+   * el estado de la caja se deduce de la existencia de ese registro (ver
+   * utils/cajaApertura.js), el sistema seguía diciendo "CAJA ABIERTA" con el
+   * monto ya borrado. La plata desaparecía del sistema sin rastro.
+   *
+   * Es el mismo arreglo que ya se le hizo a `asistencia.registrar`.
+   *
+   * @param {object} p
+   * @param {boolean} p.esApertura
+   * @param {number|string} p.cajaId
+   * @param {number} p.monto
+   * @param {string} p.usuarioId
+   * @param {string} p.cajaDescripcion  para el detalle del registro
+   */
+  aperturaCierreTransaccional: async ({
+    esApertura,
+    cajaId,
+    monto,
+    usuarioId,
+    cajaDescripcion,
+  }) => {
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // El registro va primero en las dos ramas: es el rastro contable y lo
+      // que define el estado de la caja.
+      const [ins] = await conn.query(
+        `INSERT INTO registrodiariocaja (
+           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          cajaId,
+          normalizeRegistroFecha(null),
+          esApertura ? TIPO_GASTO_APERTURA : TIPO_GASTO_CIERRE,
+          TIPO_GASTO_GRUPO_CAJA,
+          `${esApertura ? "APERTURA" : "CIERRE"} ${cajaDescripcion || ""}`.trim(),
+          monto,
+          usuarioId,
+        ]
+      );
+
+      if (esApertura) {
+        await conn.query(
+          "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
+          [monto, cajaId]
+        );
+      } else {
+        await conn.query("UPDATE Caja SET CajaMonto = 0 WHERE CajaId = ?", [
+          cajaId,
+        ]);
+      }
+
+      await conn.commit();
+      return { registroId: ins.insertId };
+    } catch (err) {
+      await conn.rollback().catch(() => {});
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
 
   getUltimaApertura: (cajaId) => {

@@ -2,15 +2,38 @@ const express = require("express");
 const router = express.Router();
 const tipogastoController = require("../controllers/tipogasto.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
+const { requireAnyPerm } = requirePerm;
+const { LECTORES_TIPOGASTO } = require("../constants/permisos");
 
 router.use(authMiddleware);
 
-router.get("/search", authMiddleware, tipogastoController.searchTipoGastos);
-router.get("/", authMiddleware, tipogastoController.getAll);
-router.get("/paginated", authMiddleware, tipogastoController.getAllPaginated);
-router.get("/:id", authMiddleware, tipogastoController.getById);
-router.post("/", authMiddleware, tipogastoController.create);
-router.put("/:id", authMiddleware, tipogastoController.update);
-router.delete("/:id", authMiddleware, tipogastoController.delete);
+router.get(
+  "/search",
+  requireAnyPerm(LECTORES_TIPOGASTO, "leer"),
+  tipogastoController.searchTipoGastos
+);
+router.get("/", requireAnyPerm(LECTORES_TIPOGASTO, "leer"), tipogastoController.getAll);
+router.get(
+  "/paginated",
+  requireAnyPerm(LECTORES_TIPOGASTO, "leer"),
+  tipogastoController.getAllPaginated
+);
+router.get(
+  "/:id",
+  requireAnyPerm(LECTORES_TIPOGASTO, "leer"),
+  tipogastoController.getById
+);
+router.post("/", requirePerm("TIPOSGASTO", "crear"), tipogastoController.create);
+router.put(
+  "/:id",
+  requirePerm("TIPOSGASTO", "editar"),
+  tipogastoController.update
+);
+router.delete(
+  "/:id",
+  requirePerm("TIPOSGASTO", "eliminar"),
+  tipogastoController.delete
+);
 
 module.exports = router;

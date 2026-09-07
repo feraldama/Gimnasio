@@ -3,6 +3,8 @@ const router = express.Router();
 const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middlewares/auth");
 const requirePerm = require("../middlewares/permission");
+const { requireAnyPerm } = requirePerm;
+const { LECTORES_FICHA_PAGO } = require("../constants/permisos");
 
 // authMiddleware ya está aplicado globalmente con `router.use`. Cada route
 // arriba agrega `requirePerm("PAGOS", accion)` con la acción que corresponde
@@ -17,7 +19,7 @@ router.get(
 );
 router.get(
   "/cliente/:clienteId",
-  requirePerm("PAGOS", "leer"),
+  requireAnyPerm(LECTORES_FICHA_PAGO, "leer"),
   pagoController.getByClienteId
 );
 router.get("/", requirePerm("PAGOS", "leer"), pagoController.getAll);

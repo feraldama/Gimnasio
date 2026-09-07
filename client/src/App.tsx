@@ -48,6 +48,9 @@ const Inventario = lazy(() => import("./pages/inventario/Inventario"));
 const SuscripcionesPage = lazy(
   () => import("./pages/suscripciones/SuscripcionesPage")
 );
+const VencimientosPage = lazy(
+  () => import("./pages/suscripciones/VencimientosPage")
+);
 const PlanesPage = lazy(() => import("./pages/planes/PlanesPage"));
 const PagosPage = lazy(() => import("./pages/pagos/PagosPage"));
 const ReporteCobranzaPage = lazy(
@@ -70,6 +73,9 @@ const CanchaBloqueosPage = lazy(
 );
 const ReportesGraficosPage = lazy(
   () => import("./pages/dashboard/ReportesGraficosPage")
+);
+const TableroMensualPage = lazy(
+  () => import("./pages/dashboard/TableroMensualPage")
 );
 const FichaAlumnoPage = lazy(() => import("./pages/customers/FichaAlumnoPage"));
 const KioskoAsistenciaPage = lazy(
@@ -179,6 +185,10 @@ function App() {
               <Route path="/facturas" element={<FacturasPage />} />
               <Route path="/planes" element={<PlanesPage />} />
               <Route path="/suscripciones" element={<SuscripcionesPage />} />
+              <Route
+                path="/vencimientos"
+                element={<VencimientosPage />}
+              />
               <Route path="/pagos" element={<PagosPage />} />
               <Route
                 path="/reporte-cobranza"
@@ -203,6 +213,10 @@ function App() {
               <Route
                 path="/reportes-graficos"
                 element={<ReportesGraficosPage />}
+              />
+              <Route
+                path="/tablero-mensual"
+                element={<TableroMensualPage />}
               />
               <Route path="/clientes/:id/ficha" element={<FichaAlumnoPage />} />
             </Route>

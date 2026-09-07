@@ -1,6 +1,6 @@
 const Cliente = require("../models/cliente.model");
 const db = require("../config/db");
-const { sendError } = require("../utils/errors");
+const { sendError, mensajeConflictoUnico } = require("../utils/errors");
 
 function extractClienteFilters(query) {
   const allowedTipos = ["MI", "MA"];
@@ -130,6 +130,16 @@ exports.createCliente = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al crear cliente:", error);
+    // Cédula repetida (restricción uq_clientes_ruc_no_vacio, migración 017):
+    // es un conflicto de datos del usuario, no una falla del servidor.
+    const duplicado = mensajeConflictoUnico(error);
+    if (duplicado) {
+      return res.status(409).json({
+        success: false,
+        code: "CI_DUPLICADA",
+        message: duplicado,
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Error al crear cliente",
@@ -161,6 +171,16 @@ exports.updateCliente = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al actualizar cliente:", error);
+    // Cédula repetida (restricción uq_clientes_ruc_no_vacio, migración 017):
+    // es un conflicto de datos del usuario, no una falla del servidor.
+    const duplicado = mensajeConflictoUnico(error);
+    if (duplicado) {
+      return res.status(409).json({
+        success: false,
+        code: "CI_DUPLICADA",
+        message: duplicado,
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Error al actualizar cliente",

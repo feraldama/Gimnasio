@@ -3,6 +3,7 @@ const db = require("../config/db");
 const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
 const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
+const { sendError } = require("../utils/errors");
 
 /**
  * Reglas de negocio para cobrar sobre una suscripción (dentro de la
@@ -74,7 +75,7 @@ exports.getAll = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -86,7 +87,7 @@ exports.getById = async (req, res) => {
     }
     res.json(pago);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -290,7 +291,7 @@ exports.createLote = async (req, res) => {
       console.error("Error en rollback:", rollbackErr);
     }
     console.error("Error en createLote:", error);
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   } finally {
     connection.release();
   }
@@ -471,7 +472,7 @@ exports.create = async (req, res) => {
       console.error("Error en rollback:", rollbackErr);
     }
     console.error("Error al crear pago:", error);
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   } finally {
     connection.release();
   }
@@ -495,7 +496,7 @@ exports.update = async (req, res) => {
     }
     res.json({ message: "Pago actualizado exitosamente", data: pago });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   }
 };
 
@@ -595,7 +596,7 @@ exports.delete = async (req, res) => {
       });
     }
     console.error("Error al anular pago:", error);
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   } finally {
     connection.release();
   }
@@ -606,7 +607,7 @@ exports.getByClienteId = async (req, res) => {
     const pagos = await Pago.getByClienteId(req.params.clienteId);
     res.json({ data: pagos });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -624,7 +625,7 @@ exports.getReporte = async (req, res) => {
     const reporte = await Pago.getReporte(fechaDesde, fechaHasta, agruparPor);
     res.json({ data: reporte, agruparPor, fechaDesde, fechaHasta });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 

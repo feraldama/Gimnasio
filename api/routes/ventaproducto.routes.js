@@ -2,39 +2,52 @@ const express = require("express");
 const router = express.Router();
 const ventaProductoController = require("../controllers/ventaproducto.controller");
 const authMiddleware = require("../middlewares/auth");
+const { requireAnyPerm } = require("../middlewares/permission");
+const {
+  ESCRITORES_VENTA_DETALLE,
+  LECTORES_VENTA_DETALLE,
+} = require("../constants/permisos");
 
 router.use(authMiddleware);
 
 router.get(
   "/search",
-  authMiddleware,
+  requireAnyPerm(LECTORES_VENTA_DETALLE, "leer"),
   ventaProductoController.searchVentaProductos
 );
-router.get("/", authMiddleware, ventaProductoController.getAll);
+router.get(
+  "/",
+  requireAnyPerm(LECTORES_VENTA_DETALLE, "leer"),
+  ventaProductoController.getAll
+);
 router.get(
   "/paginated",
-  authMiddleware,
+  requireAnyPerm(LECTORES_VENTA_DETALLE, "leer"),
   ventaProductoController.getAllPaginated
 );
 router.get(
   "/venta/:ventaId",
-  authMiddleware,
+  requireAnyPerm(LECTORES_VENTA_DETALLE, "leer"),
   ventaProductoController.getByVentaId
 );
 router.get(
   "/:ventaId/:productoId",
-  authMiddleware,
+  requireAnyPerm(LECTORES_VENTA_DETALLE, "leer"),
   ventaProductoController.getById
 );
-router.post("/", authMiddleware, ventaProductoController.create);
+router.post(
+  "/",
+  requireAnyPerm(ESCRITORES_VENTA_DETALLE, "crear"),
+  ventaProductoController.create
+);
 router.put(
   "/:ventaId/:productoId",
-  authMiddleware,
+  requireAnyPerm(ESCRITORES_VENTA_DETALLE, "editar"),
   ventaProductoController.update
 );
 router.delete(
   "/:ventaId/:productoId",
-  authMiddleware,
+  requireAnyPerm(ESCRITORES_VENTA_DETALLE, "eliminar"),
   ventaProductoController.delete
 );
 

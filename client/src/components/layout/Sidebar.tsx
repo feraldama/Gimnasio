@@ -61,6 +61,7 @@ const navigation: NavigationItem[] = [
     icon: <DocumentTextIcon className="h-7 w-6" />,
     children: [
       { name: "Suscripciones", href: "/suscripciones" },
+      { name: "Vencimientos", href: "/vencimientos" },
       { name: "Pagos", href: "/pagos" },
       { name: "Planes", href: "/planes" },
       { name: "Cobro de Créditos", href: "/credito-pagos" },
@@ -102,6 +103,7 @@ const navigation: NavigationItem[] = [
     href: "/reportes-section",
     icon: <ChartBarIcon className="h-7 w-6" />,
     children: [
+      { name: "Tablero mensual", href: "/tablero-mensual" },
       { name: "Reportes gráficos", href: "/reportes-graficos" },
       { name: "Reporte clásico", href: "/reportes" },
     ],

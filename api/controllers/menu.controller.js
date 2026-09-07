@@ -18,7 +18,7 @@ exports.getAll = async (req, res) => {
     );
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -28,7 +28,7 @@ exports.getById = async (req, res) => {
     if (!menu) return res.status(404).json({ message: "Menú no encontrado" });
     res.json(menu);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -37,7 +37,7 @@ exports.create = async (req, res) => {
     const menu = await Menu.create(req.body);
     res.status(201).json(menu);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -46,7 +46,7 @@ exports.update = async (req, res) => {
     const menu = await Menu.update(req.params.id, req.body);
     res.json(menu);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -55,6 +55,6 @@ exports.delete = async (req, res) => {
     await Menu.delete(req.params.id);
     res.json({ message: "Menú eliminado" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };

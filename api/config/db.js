@@ -253,6 +253,10 @@ const db = {
       .catch((err) => cb(err));
   },
   on: (...args) => events.on(...args),
+  // Cierra el pool. Necesario para que un proceso que sólo hizo consultas
+  // pueda terminar sin esperar `idleTimeoutMillis` (60 s): scripts puntuales
+  // y la suite de tests de integración.
+  end: () => pool.end(),
 };
 
 pool.on("error", (err) => {

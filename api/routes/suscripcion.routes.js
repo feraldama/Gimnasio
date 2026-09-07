@@ -3,6 +3,8 @@ const router = express.Router();
 const suscripcionController = require("../controllers/suscripcion.controller");
 const authMiddleware = require("../middlewares/auth");
 const requirePerm = require("../middlewares/permission");
+const { requireAnyPerm } = requirePerm;
+const { LECTORES_FICHA_SUSCRIPCION } = require("../constants/permisos");
 
 router.use(authMiddleware);
 
@@ -23,7 +25,7 @@ router.get(
 );
 router.get(
   "/cliente/:clienteId",
-  requirePerm("SUSCRIPCIONES", "leer"),
+  requireAnyPerm(LECTORES_FICHA_SUSCRIPCION, "leer"),
   suscripcionController.getByClienteId
 );
 router.get("/", requirePerm("SUSCRIPCIONES", "leer"), suscripcionController.getAll);

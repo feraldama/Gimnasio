@@ -10,7 +10,7 @@ exports.getAll = async (req, res) => {
     const result = await Perfil.getAllPaginated(page, itemsPerPage);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -21,7 +21,7 @@ exports.getById = async (req, res) => {
       return res.status(404).json({ message: "Perfil no encontrado" });
     res.json(perfil);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -56,7 +56,7 @@ exports.create = async (req, res) => {
     }
     res.status(201).json(perfil);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -91,7 +91,7 @@ exports.update = async (req, res) => {
     }
     res.json(perfil);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -100,6 +100,6 @@ exports.delete = async (req, res) => {
     await Perfil.delete(req.params.id);
     res.json({ message: "Perfil eliminado" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };

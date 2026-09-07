@@ -453,56 +453,162 @@ const Suscripcion = {
     });
   },
 
-  getProximasAVencer: (dias = 30, limit = null) => {
+  /**
+   * Lista de trabajo de vencimientos: a quién hay que llamar para que renueve.
+   *
+   * En un gimnasio el cobro y la retención son lo mismo, porque el acceso es
+   * prepago (ver `Asistencia.estadoAcceso`, que bloquea la entrada). Así que
+   * esta lista es la herramienta de cobranza real, más que un reporte de
+   * antigüedad de deuda.
+   *
+   * @param {number} dias          ventana hacia adelante (por vencer).
+   * @param {number} limit         corte de filas (null = todas).
+   * @param {number} clasesMin     umbral de clases restantes para que un plan
+   *                               de modalidad CLASES entre en la lista.
+   * @param {number} diasVencidos  ventana hacia atrás. Cuántos días de
+   *                               vencidos siguen en la lista.
+   *
+   *                               El default es 7 por compatibilidad con el
+   *                               widget del Dashboard, pero para una lista de
+   *                               trabajo conviene 30: el socio que venció
+   *                               hace dos semanas y dejó de venir es el
+   *                               llamado de mayor valor, y con 7 días era
+   *                               invisible. Más allá de ~30 días la
+   *                               recuperación en un gimnasio es marginal.
+   *
+   * QUÉ RESUELVE, caso por caso:
+   *
+   *   * Socio con suscripciones SOLAPADAS o que ya renovó: no aparece. El
+   *     INNER JOIN toma sólo la vigencia más lejana de cada cliente, así que
+   *     alguien con un plan venciendo el viernes y otro corriendo hasta fin
+   *     de mes no entra a la lista.
+   *   * Canceladas y suspendidas: excluidas, y también del cálculo del MAX —
+   *     si no, una cancelada con fecha lejana ganaba el MAX y el cliente
+   *     desaparecía aunque tuviera una vigente venciendo en días.
+   *   * Planes por CLASES: entran por cupo agotándose, no sólo por fecha. Un
+   *     socio con 1 clase restante se queda sin acceso el próximo ingreso
+   *     aunque su fecha fin esté lejos; antes era invisible en esta lista.
+   *   * Pago parcial: se devuelve el SALDO en guaraníes, no sólo
+   *     PAGADA/PENDIENTE, porque lo que se va a cobrar es ese número.
+   *   * Última asistencia: es lo que cambia la conversación. El que viene
+   *     todos los días y se le venció se olvidó (renovación casi segura); el
+   *     que no viene desde tres semanas ya se fue. Sin ese dato las dos filas
+   *     se ven iguales.
+   */
+  getProximasAVencer: (dias = 30, limit = null, clasesMin = 2, diasVencidos = 7) => {
     return new Promise((resolve, reject) => {
       // Rango basado en fecha local del servidor (no UTC).
       const hoyISO = todayLocalISO();
-      const fechaDesdeFormateada = addDaysLocal(hoyISO, -7);
+      const fechaDesdeFormateada = addDaysLocal(hoyISO, -Math.abs(diasVencidos));
       const fechaLimiteFormateada = addDaysLocal(hoyISO, dias);
 
-      // Solo mostrar la suscripción más reciente por cliente (la de fecha fin más lejana).
-      // Así, si RONY tiene Suscripcion 8 (vencida 2026-03-05) y Suscripcion 12 (activa 2026-04-08),
-      // solo se considera la 12. Si la 12 no está en el rango (ej. dias=9), RONY no aparece.
       const hasLimit = limit != null && limit > 0;
       const baseSelect = `
         SELECT s.*,
-          c.ClienteNombre, c.ClienteApellido,
-          p.PlanNombre, p.PlanPrecio,
+          c.ClienteNombre, c.ClienteApellido, c.ClienteTelefono, c.ClienteRUC,
+          p.PlanNombre, p.PlanPrecio, p.PlanModalidad, p.PlanCantidadClases,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
             WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
-          END as EstadoPago
-        FROM suscripcion s
-        INNER JOIN (
-          -- La "vigencia más lejana" por cliente se calcula SOLO sobre
-          -- suscripciones no canceladas/suspendidas. Si no, una suscripción
-          -- cancelada con fecha fin lejana (o una futura cancelada) ganaba el
-          -- MAX y el cliente desaparecía del aviso aunque tuviera una vigente
-          -- venciendo en días.
-          SELECT ClienteId, MAX(SuscripcionFechaFin) as maxfechafin
+          END as EstadoPago,
+          GREATEST(COALESCE(p.PlanPrecio, 0) - COALESCE(pg.totalpagado, 0), 0)
+            AS SaldoPendiente,
+          asi.ultima AS UltimaAsistencia,
+          -- Días sin venir contra la fecha LOCAL del servidor, pasada por
+          -- parámetro. Con CURRENT_DATE la cifra dependería de la zona
+          -- horaria del motor de base: si la base corre en UTC, entre las
+          -- 21:00 y las 23:59 locales CURRENT_DATE ya es mañana y el socio
+          -- que vino hoy aparecería con un día de ausencia. Es el mismo
+          -- motivo por el que existe utils/dateUtils.
+          CASE
+            WHEN asi.ultima IS NULL THEN NULL
+            ELSE (DATE(?) - asi.ultima)
+          END AS DiasSinVenir,
+          -- Por qué está en la lista. Sirve para ordenar por urgencia y para
+          -- que el mostrador sepa qué decir al llamar.
+          CASE
+            WHEN DATE(s.SuscripcionFechaFin) < DATE(?) THEN 'VENCIDA'
+            WHEN p.PlanModalidad = 'CLASES'
+                 AND COALESCE(s.SuscripcionClasesRestantes, 0) <= ?
+                 AND DATE(s.SuscripcionFechaFin) > DATE(?)
+              THEN 'CLASES'
+            ELSE 'VENCE'
+          END AS Motivo
+        FROM (
+          -- UNA fila por cliente: la de vigencia más lejana.
+          --
+          -- Antes esto era un INNER JOIN contra
+          -- MAX(SuscripcionFechaFin) GROUP BY ClienteId, y emparejaba por
+          -- igualdad de fecha. Si un cliente tenía DOS planes que terminaban
+          -- el MISMO día, los dos empataban con el MAX y la persona salía
+          -- DUPLICADA en la lista: dos llamadas para una sola conversación.
+          -- DISTINCT ON con desempate por id garantiza una sola fila.
+          --
+          -- El filtro de canceladas/suspendidas va acá dentro a propósito: si
+          -- se aplicara después, una cancelada con fecha lejana ganaría la
+          -- selección y el cliente desaparecería del aviso aunque tuviera una
+          -- vigente venciendo en días.
+          --
+          -- LIMITACIÓN: si el cliente tiene varios planes simultáneos, la fila
+          -- muestra el saldo del más reciente, no la suma de todos. Para la
+          -- lista de llamados alcanza (es una llamada); el detalle completo
+          -- está en la ficha del socio.
+          SELECT DISTINCT ON (ClienteId) *
           FROM suscripcion
           WHERE SuscripcionFechaFin IS NOT NULL
             AND SuscripcionEstado NOT IN ('C', 'S')
-          GROUP BY ClienteId
-        ) latest ON s.ClienteId = latest.ClienteId AND s.SuscripcionFechaFin = latest.maxfechafin
+          ORDER BY ClienteId, SuscripcionFechaFin DESC, SuscripcionId DESC
+        ) s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId
         LEFT JOIN LATERAL (
           SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
           FROM pago WHERE SuscripcionId = s.SuscripcionId
         ) pg ON true
+        LEFT JOIN LATERAL (
+          -- Última asistencia del cliente. Usa el índice
+          -- idx_asistencia_cliente_fecha (migración 017).
+          SELECT MAX(AsistenciaFecha) AS ultima
+          FROM asistencia WHERE ClienteId = s.ClienteId
+        ) asi ON true
         WHERE s.SuscripcionFechaFin IS NOT NULL
           AND s.SuscripcionEstado NOT IN ('C', 'S')
-          AND DATE(s.SuscripcionFechaFin) >= DATE(?)
-          AND DATE(s.SuscripcionFechaFin) <= DATE(?)
+          AND (
+            -- Por fecha: dentro de la ventana.
+            (DATE(s.SuscripcionFechaFin) >= DATE(?)
+             AND DATE(s.SuscripcionFechaFin) <= DATE(?))
+            -- O por cupo: plan de clases a punto de agotarse, aunque la fecha
+            -- de fin esté lejos.
+            OR (p.PlanModalidad = 'CLASES'
+                AND COALESCE(s.SuscripcionClasesRestantes, 0) <= ?
+                AND DATE(s.SuscripcionFechaFin) >= DATE(?))
+          )
         ORDER BY s.SuscripcionFechaFin ASC
       `;
       const query = hasLimit ? `${baseSelect} LIMIT ?` : baseSelect;
 
-      const params = hasLimit
-        ? [fechaDesdeFormateada, fechaLimiteFormateada, limit]
-        : [fechaDesdeFormateada, fechaLimiteFormateada];
+      // Orden de los placeholders: los dos del CASE Motivo, los dos del rango
+      // de fechas, y los dos de la rama por clases.
+      // Orden de los placeholders, en el orden en que aparecen en el SQL:
+      //   1) DiasSinVenir      -> hoy
+      //   2) Motivo VENCIDA    -> hoy
+      //   3) Motivo CLASES     -> umbral de clases
+      //   4) Motivo CLASES     -> límite de la ventana
+      //   5,6) rango de fechas -> desde, hasta
+      //   7) rama por clases   -> umbral
+      //   8) rama por clases   -> hoy
+      const params = [
+        hoyISO,
+        hoyISO,
+        clasesMin,
+        fechaLimiteFormateada,
+        fechaDesdeFormateada,
+        fechaLimiteFormateada,
+        clasesMin,
+        hoyISO,
+      ];
+      if (hasLimit) params.push(limit);
 
       db.query(query, params, (err, results) => {
         if (err) return reject(err);

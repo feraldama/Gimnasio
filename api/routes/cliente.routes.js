@@ -3,6 +3,8 @@ const router = express.Router();
 const clienteController = require("../controllers/cliente.controller");
 const authMiddleware = require("../middlewares/auth");
 const requirePerm = require("../middlewares/permission");
+const { requireAnyPerm } = requirePerm;
+const { LECTORES_FICHA_CLIENTE } = require("../constants/permisos");
 
 router.get(
   "/",
@@ -33,7 +35,7 @@ router.get(
 router.get(
   "/:id",
   authMiddleware,
-  requirePerm("CLIENTES", "leer"),
+  requireAnyPerm(LECTORES_FICHA_CLIENTE, "leer"),
   clienteController.getClienteById
 );
 router.post(

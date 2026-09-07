@@ -154,10 +154,7 @@ exports.createFactura = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error, 400);
   }
 };
 
@@ -226,10 +223,7 @@ exports.updateFactura = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error, 400);
   }
 };
 
@@ -244,10 +238,7 @@ exports.deleteFactura = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error, 400);
   }
 };
 

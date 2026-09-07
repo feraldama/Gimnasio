@@ -1,5 +1,9 @@
 const RegistroDiarioCaja = require("../models/registrodiariocaja.model");
 const { sendError } = require("../utils/errors");
+const {
+  evaluarAperturaCierre,
+  esSolicitudDeApertura,
+} = require("../utils/cajaApertura");
 const db = require("../config/db");
 
 function extractRegistroFilters(query) {
@@ -200,38 +204,23 @@ exports.aperturaCierreCaja = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Faltan datos requeridos" });
     }
-    let Sigue = "N";
-    let error = "";
-    // Buscar última apertura y cierre
+
+    // Convención heredada: `apertura === 0` significa APERTURA.
+    const esApertura = esSolicitudDeApertura(apertura);
+
+    // El estado de la caja se deduce comparando los ids de la última apertura
+    // y el último cierre (ver utils/cajaApertura.js).
     const aperturaReg = await RegistroDiarioCaja.getUltimaApertura(CajaId);
     const cierreReg = await RegistroDiarioCaja.getUltimoCierre(CajaId);
-    const RegistroDiarioCajaIdApertura = aperturaReg
-      ? aperturaReg.RegistroDiarioCajaId
-      : 0;
-    const RegistroDiarioCajaIdCierre = cierreReg
-      ? cierreReg.RegistroDiarioCajaId
-      : 0;
-    if (apertura == 0) {
-      if (RegistroDiarioCajaIdApertura === 0) {
-        Sigue = "S";
-      } else if (RegistroDiarioCajaIdCierre > RegistroDiarioCajaIdApertura) {
-        Sigue = "S";
-      } else {
-        Sigue = "N";
-        error = "CAJA ABIERTA - DEBE REALIZAR EL CIERRE";
-      }
-    } else {
-      if (RegistroDiarioCajaIdCierre < RegistroDiarioCajaIdApertura) {
-        Sigue = "S";
-      } else {
-        Sigue = "N";
-        error = "CAJA CERRADA - DEBE REALIZAR LA APERTURA";
-      }
-    }
-    if (Sigue === "N") {
+    const { permitido, error } = evaluarAperturaCierre({
+      esApertura,
+      aperturaId: aperturaReg ? aperturaReg.RegistroDiarioCajaId : 0,
+      cierreId: cierreReg ? cierreReg.RegistroDiarioCajaId : 0,
+    });
+    if (!permitido) {
       return res.status(400).json({ success: false, message: error });
     }
-    // Obtener descripción de caja
+
     const [caja] = await new Promise((resolve, reject) => {
       db.query(
         "SELECT * FROM Caja WHERE CajaId = ?",
@@ -242,62 +231,24 @@ exports.aperturaCierreCaja = async (req, res) => {
         }
       );
     });
-    const CajaDescripcion = caja ? caja.CajaDescripcion : "";
-    // APERTURA
-    if (apertura == 0) {
-      // Crear registro de apertura
-      await RegistroDiarioCaja.create({
-        CajaId,
-        RegistroDiarioCajaFecha: new Date(),
-        TipoGastoId: 2,
-        TipoGastoGrupoId: 2,
-        RegistroDiarioCajaDetalle: "APERTURA " + CajaDescripcion,
-        RegistroDiarioCajaMonto: Monto,
-        UsuarioId,
-      });
-      // Sumar monto a la caja
-      await new Promise((resolve, reject) => {
-        db.query(
-          "UPDATE Caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?",
-          [Monto, CajaId],
-          (err) => {
-            if (err) return reject(err);
-            resolve();
-          }
-        );
-      });
-      return res.json({
-        success: true,
-        message: "Apertura realizada correctamente",
-      });
-    } else {
-      // CIERRE
-      // Poner monto de caja en 0
-      await new Promise((resolve, reject) => {
-        db.query(
-          "UPDATE Caja SET CajaMonto = 0 WHERE CajaId = ?",
-          [CajaId],
-          (err) => {
-            if (err) return reject(err);
-            resolve();
-          }
-        );
-      });
-      // Crear registro de cierre
-      await RegistroDiarioCaja.create({
-        CajaId,
-        RegistroDiarioCajaFecha: new Date(),
-        TipoGastoId: 1,
-        TipoGastoGrupoId: 2,
-        RegistroDiarioCajaDetalle: "CIERRE " + CajaDescripcion,
-        RegistroDiarioCajaMonto: Monto,
-        UsuarioId,
-      });
-      return res.json({
-        success: true,
-        message: "Cierre realizado correctamente",
-      });
-    }
+
+    // Registro + movimiento del monto en una sola transacción. Ver el
+    // comentario de `aperturaCierreTransaccional`: hacerlo en dos pasos
+    // sueltos podía dejar el cajón en cero sin registro de cierre.
+    await RegistroDiarioCaja.aperturaCierreTransaccional({
+      esApertura,
+      cajaId: CajaId,
+      monto: Monto,
+      usuarioId: UsuarioId,
+      cajaDescripcion: caja ? caja.CajaDescripcion : "",
+    });
+
+    return res.json({
+      success: true,
+      message: esApertura
+        ? "Apertura realizada correctamente"
+        : "Cierre realizado correctamente",
+    });
   } catch (error) {
     console.error("Error en apertura/cierre de caja:", error);
     res.status(500).json({

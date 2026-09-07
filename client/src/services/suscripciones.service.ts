@@ -140,13 +140,63 @@ export const getSuscripcionesByCliente = async (clienteId: string | number) => {
   }
 };
 
+/**
+ * Fila de la lista de trabajo de vencimientos. Los campos de contacto,
+ * saldo y asistencia son los que la vuelven accionable: sin teléfono no se
+ * puede llamar, y sin la última asistencia no se sabe si el socio se olvidó
+ * de pagar o ya se fue.
+ */
+export interface SuscripcionPorVencer {
+  SuscripcionId: number;
+  ClienteId: number;
+  PlanId?: number;
+  ClienteNombre?: string;
+  ClienteApellido?: string;
+  /** Puede venir vacío: el cliente existe pero no tiene el dato cargado. */
+  ClienteTelefono?: string;
+  ClienteRUC?: string;
+  PlanNombre?: string;
+  PlanPrecio?: number;
+  PlanModalidad?: string;
+  PlanCantidadClases?: number;
+  SuscripcionFechaInicio?: string;
+  SuscripcionFechaFin: string;
+  SuscripcionClasesRestantes?: number;
+  SuscripcionEstado?: string;
+  EstadoPago?: "PAGADA" | "PENDIENTE";
+  /** Lo que falta cobrar de este plan, en guaraníes. */
+  SaldoPendiente?: number;
+  /** null si el socio nunca registró una asistencia. */
+  UltimaAsistencia?: string | null;
+  /** null si nunca vino. 0 = vino hoy. */
+  DiasSinVenir?: number | null;
+  /** Por qué está en la lista. VENCIDA es la más urgente. */
+  Motivo?: "VENCIDA" | "VENCE" | "CLASES";
+  [key: string]: unknown;
+}
+
+export interface ProximasAVencerResponse {
+  data: SuscripcionPorVencer[];
+  dias: number;
+  clasesMin: number;
+  diasVencidos: number;
+}
+
 export const getSuscripcionesProximasAVencer = async (
   dias = 30,
-  limit?: number
+  limit?: number,
+  clasesMin?: number,
+  diasVencidos?: number
 ) => {
   const params: { [key: string]: number } = { dias };
   if (limit != null && limit > 0) {
     params.limit = limit;
+  }
+  if (clasesMin != null && clasesMin >= 0) {
+    params.clasesMin = clasesMin;
+  }
+  if (diasVencidos != null && diasVencidos >= 0) {
+    params.diasVencidos = diasVencidos;
   }
   try {
     const response = await api.get("/suscripciones/proximas-a-vencer", {

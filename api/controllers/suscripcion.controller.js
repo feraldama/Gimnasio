@@ -1,4 +1,5 @@
 const Suscripcion = require("../models/suscripcion.model");
+const { sendError } = require("../utils/errors");
 
 exports.getAll = async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
@@ -28,7 +29,7 @@ exports.getAll = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -40,7 +41,7 @@ exports.getById = async (req, res) => {
     }
     res.json(suscripcion);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -51,7 +52,7 @@ exports.create = async (req, res) => {
       .status(201)
       .json({ message: "Suscripción creada exitosamente", data: suscripcion });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   }
 };
 
@@ -66,7 +67,7 @@ exports.update = async (req, res) => {
       data: suscripcion,
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   }
 };
 
@@ -88,7 +89,7 @@ exports.delete = async (req, res) => {
           "No se puede eliminar la suscripción porque tiene registros asociados.",
       });
     }
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -139,7 +140,7 @@ exports.getAllSinPaginacion = async (req, res) => {
     const suscripciones = await Suscripcion.getAll();
     res.json({ data: suscripciones });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -148,10 +149,12 @@ exports.getByClienteId = async (req, res) => {
     const suscripciones = await Suscripcion.getByClienteId(req.params.clienteId);
     res.json({ data: suscripciones });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
+// Lista de trabajo de vencimientos. Ver el comentario de
+// `Suscripcion.getProximasAVencer` para qué entra y por qué.
 exports.getProximasAVencer = async (req, res) => {
   try {
     const dias = parseInt(req.query.dias) || 30;
@@ -160,9 +163,27 @@ exports.getProximasAVencer = async (req, res) => {
       limitParam !== undefined && limitParam !== ""
         ? parseInt(limitParam)
         : null;
-    const suscripciones = await Suscripcion.getProximasAVencer(dias, limit);
-    res.json({ data: suscripciones });
+    // Umbral de clases restantes para que un plan por CLASES entre en la
+    // lista. Default 2: con dos clases o menos, el socio se queda sin acceso
+    // esta semana.
+    const clasesMinParam = parseInt(req.query.clasesMin, 10);
+    const clasesMin = Number.isFinite(clasesMinParam) && clasesMinParam >= 0
+      ? clasesMinParam
+      : 2;
+    // Cuántos días de vencidos siguen en la lista. Default 7 para no cambiar
+    // el widget del Dashboard; la pantalla de vencimientos pide 30, porque el
+    // socio que venció hace dos semanas es el llamado más recuperable.
+    const dvParam = parseInt(req.query.diasVencidos, 10);
+    const diasVencidos =
+      Number.isFinite(dvParam) && dvParam >= 0 ? dvParam : 7;
+    const suscripciones = await Suscripcion.getProximasAVencer(
+      dias,
+      limit,
+      clasesMin,
+      diasVencidos
+    );
+    res.json({ data: suscripciones, dias, clasesMin, diasVencidos });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };

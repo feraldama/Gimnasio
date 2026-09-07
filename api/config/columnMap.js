@@ -20,6 +20,7 @@ module.exports = {
   "clientetipo": "ClienteTipo",
   "usuarioid": "UsuarioId",
   "clientefechanacimiento": "ClienteFechaNacimiento",
+  "clientesexo": "ClienteSexo",
   "comboid": "ComboId",
   "combodescripcion": "ComboDescripcion",
   "productoid": "ProductoId",

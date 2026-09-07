@@ -178,13 +178,32 @@ exports.cantinaDiario = async (req, res) => {
         AND EXTRACT(MONTH FROM VentaFecha)::int = ?
       GROUP BY dia
     `;
-    // Saldo de caja al cierre del dia: sum de movimientos del dia (positivos
-    // y negativos segun TipoGastoGrupoId). Usamos el monto neto del dia como
-    // proxy de "efectivo del dia"; si el cliente quiere saldo acumulado real
-    // se puede ajustar despues.
+    // Movimiento NETO de caja del dia.
+    //
+    // El comentario original decia "positivos y negativos segun
+    // TipoGastoGrupoId", pero la consulta sumaba `RegistroDiarioCajaMonto` sin
+    // mirar el tipo: los montos se guardan siempre positivos y el signo lo da
+    // `TipoGastoId` (1 = EGRESOS, 2 = INGRESOS). Es decir que una compra
+    // sumaba igual que una venta y el denominador quedaba inflado. Corregido:
+    // los egresos restan.
+    //
+    // LIMITACIONES QUE SIGUEN (necesitan definicion del cliente, no codigo):
+    //   - Cuenta como efectivo los cobros por POS, voucher y transferencia,
+    //     que no entran al cajon fisico.
+    //   - Es el neto del dia, no el saldo acumulado de la caja.
+    //   - `Stock($)` mas abajo usa el snapshot ACTUAL de stock incluso para
+    //     dias pasados, asi que el historico de la rotacion no es exacto.
+    // Mientras eso no se defina, la serie sirve para comparar dias entre si,
+    // no como cifra contable. El resultado del negocio se lee en el tablero
+    // mensual (controllers/tablero.controller.js), que si separa cobrado de
+    // egresos con las exclusiones correctas.
     const sqlCaja = `
       SELECT EXTRACT(DAY FROM RegistroDiarioCajaFecha)::int AS dia,
-             COALESCE(SUM(RegistroDiarioCajaMonto), 0)::bigint AS efectivo
+             COALESCE(SUM(
+               CASE WHEN TipoGastoId = 2
+                    THEN RegistroDiarioCajaMonto
+                    ELSE -RegistroDiarioCajaMonto END
+             ), 0)::bigint AS efectivo
       FROM registrodiariocaja
       WHERE EXTRACT(YEAR FROM RegistroDiarioCajaFecha)::int = ?
         AND EXTRACT(MONTH FROM RegistroDiarioCajaFecha)::int = ?

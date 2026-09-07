@@ -15,6 +15,10 @@ const {
 // método con LIKE 'Contado%', LIKE 'Transferencia%', etc.
 const TIPO_GASTO_GRUPO_COBRO_CANCHA = 7;
 
+// Grupo de EGRESOS para revertir un cobro de cancha. Es un grupo propio (10) y
+// no el 7: del lado de los egresos el 7 ya es LAVADERO. Ver migracion 019.
+const TIPO_GASTO_GRUPO_ANULACION_CANCHA = 10;
+
 exports.getAll = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -778,14 +782,25 @@ exports.anularCobro = async (req, res) => {
       const cli = truncar(clienteRaw, Math.max(0, presupuesto));
       const detalle = truncar(`${prefijo}${cli}${sufijo}`, 50);
 
-      // TipoGastoId = 1 (egreso), mismo TipoGastoGrupoId = 7 para que sigan
-      // categorizados como cobro cancha (los reportes los suman con signo).
+      // TipoGastoId = 1 (egreso) con grupo propio ANULACION COBRO CANCHA.
+      //
+      // Antes usaba el grupo 7 para espejar COBRO CANCHA, pero el 7 del lado
+      // de los EGRESOS ya significa LAVADERO en `tipogastogrupo`: toda
+      // anulacion aparecia etiquetada como gasto de lavadero en cualquier
+      // reporte que agrupe por categoria. Ver migracion 019.
       await connection.query(
         `INSERT INTO registrodiariocaja
          (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
-         VALUES (?, ?, 1, 7, ?, ?, ?)`,
-        [cajaId, fechaMov, detalle, monto, usuarioId]
+         VALUES (?, ?, 1, ?, ?, ?, ?)`,
+        [
+          cajaId,
+          fechaMov,
+          TIPO_GASTO_GRUPO_ANULACION_CANCHA,
+          detalle,
+          monto,
+          usuarioId,
+        ]
       );
       if (METODOS_EFECTIVO.has(tipo)) efectivoAreversar += monto;
     }

@@ -2,13 +2,29 @@ const express = require("express");
 const router = express.Router();
 const localController = require("../controllers/local.controller");
 const authMiddleware = require("../middlewares/auth");
+const requirePerm = require("../middlewares/permission");
+const { requireAnyPerm } = requirePerm;
+const { LECTORES_LOCAL } = require("../constants/permisos");
 
-// Rutas protegidas (requieren autenticación)
-router.get("/", authMiddleware, localController.getAllLocales);
-router.get("/search", authMiddleware, localController.searchLocales);
-router.get("/:id", authMiddleware, localController.getLocalById);
-router.post("/", authMiddleware, localController.createLocal);
-router.put("/:id", authMiddleware, localController.updateLocal);
-router.delete("/:id", authMiddleware, localController.deleteLocal);
+router.use(authMiddleware);
+
+router.get(
+  "/search",
+  requireAnyPerm(LECTORES_LOCAL, "leer"),
+  localController.searchLocales
+);
+router.get("/", requireAnyPerm(LECTORES_LOCAL, "leer"), localController.getAllLocales);
+router.get(
+  "/:id",
+  requireAnyPerm(LECTORES_LOCAL, "leer"),
+  localController.getLocalById
+);
+router.post("/", requirePerm("LOCALES", "crear"), localController.createLocal);
+router.put("/:id", requirePerm("LOCALES", "editar"), localController.updateLocal);
+router.delete(
+  "/:id",
+  requirePerm("LOCALES", "eliminar"),
+  localController.deleteLocal
+);
 
 module.exports = router;

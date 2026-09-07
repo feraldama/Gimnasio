@@ -1,4 +1,5 @@
 const Asistencia = require("../models/asistencia.model");
+const { sendError } = require("../utils/errors");
 
 exports.estadoAcceso = async (req, res) => {
   try {
@@ -13,7 +14,7 @@ exports.estadoAcceso = async (req, res) => {
     }
     res.json(estado);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -40,10 +41,16 @@ exports.registrar = async (req, res) => {
     });
   } catch (error) {
     // Cupo agotado entre la validación y el registro (carrera).
+    //
+    // Se responde a mano y NO con sendError: el mensaje es de negocio y el
+    // operador tiene que verlo. `sendError` lo ocultaría, porque
+    // `isSafeMessage` trata cualquier error con `.code` como error del driver
+    // de Postgres, y `asistencia.model` marca este caso con
+    // `.code = "SIN_CUPO"`.
     if (error.code === "SIN_CUPO") {
       return res.status(409).json({ message: error.message });
     }
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -53,7 +60,7 @@ exports.listar = async (req, res) => {
     const data = await Asistencia.listarPorFecha(fecha);
     res.json({ data });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -101,11 +108,13 @@ exports.kiosko = async (req, res) => {
         suscripcion: null,
       });
     }
+    // El kiosko tiene su propia forma de respuesta (permitido/motivo), así
+    // que no puede usar sendError. El detalle del error queda sólo en el log:
+    // esta respuesta la ve un socio parado frente a la tablet.
     console.error("Error en kiosko asistencia:", error);
     res.status(500).json({
       permitido: false,
       motivo: "Error interno",
-      error: error.message,
     });
   }
 };
@@ -116,7 +125,7 @@ exports.porCliente = async (req, res) => {
     const data = await Asistencia.porCliente(req.params.clienteId, limit);
     res.json({ data });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -132,6 +141,6 @@ exports.ranking = async (req, res) => {
     const data = await Asistencia.ranking(fechaDesde, fechaHasta, limit);
     res.json({ data });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };

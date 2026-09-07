@@ -1,6 +1,13 @@
 require("dotenv").config();
+
+// Cortar el arranque si falta configuración crítica (ver config/env.js). Va
+// antes de todo lo demás para que el error se vea en el boot y no como un
+// "no puedo entrar" inexplicable media hora después.
+require("./config/env").validarEnv();
+
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 
 // Importar rutas
 const usuarioRoutes = require("./routes/usuario.routes");
@@ -35,6 +42,7 @@ const canchaTarifaRoutes = require("./routes/canchaTarifa.routes");
 const canchaCreditoRoutes = require("./routes/canchaCredito.routes");
 const canchaBloqueoRoutes = require("./routes/canchaBloqueo.routes");
 const reportesRoutes = require("./routes/reportes.routes");
+const tableroRoutes = require("./routes/tablero.routes");
 // const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
 const app = express();
@@ -72,7 +80,29 @@ const corsOptions = {
   maxAge: 86400, // 24 horas
 };
 
+// Si la API queda detrás de un reverse proxy (nginx, Cloudflare), Express ve
+// la IP del proxy y no la del cliente: los limitadores de login meterían a
+// TODOS los puestos en el mismo balde. Definir TRUST_PROXY en .env (ej. "1"
+// para un proxy, o "loopback") sólo cuando realmente haya uno — activarlo sin
+// proxy permite falsear la IP con el header X-Forwarded-For.
+if (process.env.TRUST_PROXY) {
+  const valor = process.env.TRUST_PROXY;
+  app.set("trust proxy", /^\d+$/.test(valor) ? parseInt(valor, 10) : valor);
+  console.log(`trust proxy activado: ${valor}`);
+}
+
 // Middlewares
+// helmet pone las cabeceras de seguridad estándar. Una excepción importante:
+// `crossOriginResourcePolicy` va en "cross-origin" porque el frontend corre en
+// otro puerto y muestra las fotos de producto con <img src="…/api/productos/
+// :id/imagen"> (ver client/src/utils/productImage.ts). Con el default
+// "same-origin" el browser bloquearía esas imágenes en el POS, Compras e
+// Inventario.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
@@ -110,6 +140,7 @@ app.use("/api/cancha-tarifas", canchaTarifaRoutes);
 app.use("/api/cancha-creditos", canchaCreditoRoutes);
 app.use("/api/cancha-bloqueos", canchaBloqueoRoutes);
 app.use("/api/reportes", reportesRoutes);
+app.use("/api/tablero", tableroRoutes);
 // app.use("/api/productos", productoRoutes); // Ejemplo adicional
 
 // Ruta de prueba
@@ -117,13 +148,49 @@ app.get("/", (req, res) => {
   res.send("API funcionando");
 });
 
-// Manejo de errores (puedes mejorarlo)
+// 404 para rutas de API desconocidas. Sin esto, un endpoint mal escrito caía
+// en el handler de errores o devolvía HTML, y el frontend mostraba un error
+// genérico sin pista de que la URL no existe.
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    success: false,
+    code: "NO_ENCONTRADO",
+    message: `Ruta no encontrada: ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// Manejo de errores. Loguea el detalle en el servidor y devuelve un mensaje
+// genérico en JSON: el stack o el mensaje del driver de Postgres pueden
+// exponer nombres de tabla y SQL. Los 4 argumentos son obligatorios para que
+// Express lo reconozca como error handler.
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send("Algo salió mal!");
+  console.error("Error no manejado:", err);
+  // Si la respuesta ya empezó a escribirse no se puede cambiar el status:
+  // hay que delegar al handler por defecto de Express, que cierra el socket.
+  // Un `return` pelado acá dejaba la request colgada hasta el timeout.
+  if (res.headersSent) return next(err);
+  // CORS rechaza con un Error propio; conviene distinguirlo de un 500.
+  if (err && /no permitido por CORS/.test(err.message || "")) {
+    return res.status(403).json({
+      success: false,
+      code: "CORS_BLOQUEADO",
+      message: "Origen no permitido.",
+    });
+  }
+  res.status(500).json({
+    success: false,
+    code: "ERROR_INTERNO",
+    message: "Error interno del servidor.",
+  });
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Servidor backend corriendo en puerto ${PORT}`);
+  // Avisa si algún router pide permiso sobre un MenuId que no existe en la
+  // tabla `menu` (un typo ahí niega el acceso para siempre a los perfiles no
+  // admin, sin error visible). Sólo avisa: nunca corta el arranque.
+  require("./middlewares/permission")
+    .verificarRecursosEnBD()
+    .catch((e) => console.error("Chequeo de recursos falló:", e.message));
 });

@@ -1,4 +1,5 @@
 const Plan = require("../models/plan.model");
+const { sendError } = require("../utils/errors");
 
 // Reglas mínimas de coherencia para los campos del plan según su modalidad.
 // Sin estas validaciones, una mala carga (OPEN con duración 0, CLASES con
@@ -48,7 +49,7 @@ exports.getAll = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -60,7 +61,7 @@ exports.getById = async (req, res) => {
     }
     res.json(plan);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 
@@ -71,7 +72,7 @@ exports.create = async (req, res) => {
     const plan = await Plan.create(req.body);
     res.status(201).json({ message: "Plan creado exitosamente", data: plan });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   }
 };
 
@@ -85,7 +86,7 @@ exports.update = async (req, res) => {
     }
     res.json({ message: "Plan actualizado exitosamente", data: plan });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error, 400);
   }
 };
 
@@ -107,7 +108,7 @@ exports.delete = async (req, res) => {
           "No se puede eliminar el plan porque tiene registros asociados.",
       });
     }
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 500);
   }
 };
 

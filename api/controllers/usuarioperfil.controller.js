@@ -6,7 +6,7 @@ exports.getByUsuario = async (req, res) => {
     const perfiles = await UsuarioPerfil.getByUsuario(req.params.usuarioId);
     res.json(perfiles);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -15,7 +15,7 @@ exports.create = async (req, res) => {
     const usuarioPerfil = await UsuarioPerfil.create(req.body);
     res.status(201).json(usuarioPerfil);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
 
@@ -24,6 +24,6 @@ exports.delete = async (req, res) => {
     await UsuarioPerfil.delete(req.params.usuarioId, req.params.perfilId);
     res.json({ message: "Relación eliminada" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    sendError(res, err, 500);
   }
 };
