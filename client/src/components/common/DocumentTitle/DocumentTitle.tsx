@@ -27,6 +27,11 @@ const ROUTE_TITLES: Record<string, string> = {
   "/cancha/bloqueos": "Bloqueos de cancha",
   "/planes": "Planes",
   "/suscripciones": "Suscripciones",
+  // Estas tres faltaban: sin entrada acá, resolveTitle cae en el default y la
+  // pestaña de una pantalla que existe dice "Página no encontrada".
+  "/vencimientos": "Vencimientos",
+  "/suscripciones-vigentes": "Suscripciones vigentes",
+  "/tablero-mensual": "Tablero mensual",
   "/pagos": "Pagos",
   "/reportes": "Reportes",
   "/facturas": "Facturas",

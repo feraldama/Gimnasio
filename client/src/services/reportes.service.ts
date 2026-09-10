@@ -157,6 +157,101 @@ export const getReporteCanchaHeatmap = (
 export const getReporteCantinaDiario = (anio: number, mes: number) =>
   fetchReporte<ReporteCantinaResponse>("/reportes/cantina/diario", anio, mes);
 
+// ---------- Suscripciones vigentes por rango de fechas ----------
+// Ojo con la diferencia respecto de `getReporteGimnasioOcupacion`: aquel
+// cuenta INSCRIPCIONES del mes (agrupa por fecha de inicio), éste cuenta
+// cuántas suscripciones están VIGENTES, que incluye las que arrancaron antes
+// del rango y siguen corriendo.
+
+/** Un punto de la serie: es un stock (foto del día), no un acumulado. */
+export interface SuscripcionesVigentesPunto {
+  fecha: string;
+  suscripciones: number;
+  socios: number;
+}
+
+export interface SuscripcionVigenteDetalle {
+  suscripcionId: number;
+  clienteId: number;
+  socio: string;
+  ruc: string;
+  telefono: string;
+  planId: number;
+  plan: string;
+  planPrecio: number;
+  modalidad: string;
+  clasesRestantes: number;
+  fechaInicio: string;
+  fechaFin: string;
+  /** Días de esta suscripción que caen dentro del rango consultado. */
+  diasEnRango: number;
+  diasTotales: number;
+  /** Vigencia a HOY: A activa, V vencida, F futura, C cancelada, S suspendida. */
+  estado: string;
+  estadoPago: "PAGADA" | "PENDIENTE";
+  totalPagado: number;
+  saldoPendiente: number;
+}
+
+export interface ReporteSuscripcionesVigentesResponse {
+  fechaDesde: string;
+  fechaHasta: string;
+  dias: number;
+  /** Grano de la serie, elegido por el backend según el largo del rango. */
+  paso: "dia" | "semana" | "mes";
+  planId: number | null;
+  incluirCanceladas: boolean;
+  resumen: {
+    suscripciones: number;
+    socios: number;
+    altas: number;
+    bajas: number;
+    completas: number;
+    vigentesAlInicio: number;
+    sociosAlInicio: number;
+    vigentesAlFin: number;
+    sociosAlFin: number;
+    promedioDiario: number;
+    pico: SuscripcionesVigentesPunto | null;
+  };
+  serie: SuscripcionesVigentesPunto[];
+  detalle: SuscripcionVigenteDetalle[];
+  detalleTruncado: boolean;
+  limiteDetalle: number;
+}
+
+export interface SuscripcionesVigentesOpts {
+  planId?: number | null;
+  incluirCanceladas?: boolean;
+  limite?: number;
+}
+
+export const getReporteSuscripcionesVigentes = async (
+  fechaDesde: string,
+  fechaHasta: string,
+  opts: SuscripcionesVigentesOpts = {}
+): Promise<ReporteSuscripcionesVigentesResponse> => {
+  try {
+    const r = await api.get("/reportes/gimnasio/suscripciones-vigentes", {
+      params: {
+        fechaDesde,
+        fechaHasta,
+        ...(opts.planId ? { planId: opts.planId } : {}),
+        ...(opts.incluirCanceladas ? { incluirCanceladas: 1 } : {}),
+        ...(opts.limite ? { limite: opts.limite } : {}),
+      },
+    });
+    return r.data as ReporteSuscripcionesVigentesResponse;
+  } catch (e) {
+    const ax = e as AxiosError<{ error?: string; message?: string }>;
+    throw (
+      ax.response?.data || {
+        message: "Error al obtener el reporte de suscripciones vigentes",
+      }
+    );
+  }
+};
+
 export interface DashboardGimnasioKpis {
   sociosActivos: number;
   proximosAVencer7d: number;

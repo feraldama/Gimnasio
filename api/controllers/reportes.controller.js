@@ -8,6 +8,7 @@ const db = require("../config/db");
 const Configuracion = require("../models/configuracion.model");
 const CanchaReserva = require("../models/canchaReserva.model");
 const { CanchaTarifa, siglaDia } = require("../models/canchaTarifa.model");
+const Suscripcion = require("../models/suscripcion.model");
 const { sendError } = require("../utils/errors");
 
 // Horario operativo de Cancha: configurable via `configuracion`. Defaults
@@ -35,6 +36,54 @@ function parseAnioMes(req) {
 
 function diasEnMes(anio, mes) {
   return new Date(anio, mes, 0).getDate();
+}
+
+const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+// Tope del rango. Con paso mensual son ~120 puntos de serie, que la base
+// resuelve sin problema; más que eso ya no es un reporte, es un volcado.
+const RANGO_MAXIMO_DIAS = 3660;
+
+/**
+ * Valida `?fechaDesde=&fechaHasta=` (ambas 'YYYY-MM-DD', inclusive).
+ * Devuelve `{ error }` con un mensaje para el usuario, o el rango parseado
+ * junto con la cantidad de días que abarca.
+ */
+function parseRangoFechas(req) {
+  const desde = String(req.query.fechaDesde || "").trim();
+  const hasta = String(req.query.fechaHasta || "").trim();
+  if (!RE_FECHA_ISO.test(desde) || !RE_FECHA_ISO.test(hasta)) {
+    return { error: "Parametros fechaDesde y fechaHasta requeridos (YYYY-MM-DD)" };
+  }
+  // Comparación lexicográfica: con el formato ISO equivale a comparar fechas
+  // y evita construir Dates (que desplazarían el día por zona horaria).
+  if (desde > hasta) {
+    return { error: "fechaDesde no puede ser posterior a fechaHasta" };
+  }
+  const [ya, ma, da] = desde.split("-").map(Number);
+  const [yb, mb, dbb] = hasta.split("-").map(Number);
+  const inicio = new Date(ya, ma - 1, da);
+  const fin = new Date(yb, mb - 1, dbb);
+  if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) {
+    return { error: "Fechas invalidas" };
+  }
+  const dias = Math.round((fin - inicio) / 86400000) + 1;
+  if (dias > RANGO_MAXIMO_DIAS) {
+    return {
+      error: `El rango no puede superar ${RANGO_MAXIMO_DIAS} dias (pediste ${dias})`,
+    };
+  }
+  return { desde, hasta, dias };
+}
+
+/**
+ * Grano de la serie según el largo del rango, para que el gráfico nunca pase
+ * de ~100 puntos. Un año día por día son 365 barras ilegibles en pantalla y
+ * una consulta 52 veces más cara que la semanal, sin decir nada más.
+ */
+function pasoParaRango(dias) {
+  if (dias <= 92) return "dia";
+  if (dias <= 400) return "semana";
+  return "mes";
 }
 
 // Mapea un dia (1-31) a la semana del mes con bucketing fijo:
@@ -576,6 +625,82 @@ exports.canchaDesglose = async (req, res) => {
       },
       porCancha: porCanchaArr,
       porBanda: porBandaArr,
+    });
+  } catch (e) {
+    sendError(res, e, 500);
+  }
+};
+
+// ============================================================
+// GIMNASIO - Suscripciones vigentes en un rango de fechas
+// ============================================================
+// El reporte de ocupación de más arriba cuenta INSCRIPCIONES (agrupa por
+// SuscripcionFechaInicio), que responde "cuántos entraron este mes". Este
+// responde la otra pregunta, que es la que hace el dueño: "cuántos socios
+// vigentes tengo". Son números distintos y no intercambiables — un gimnasio
+// con cero altas en un mes puede tener 300 vigentes.
+//
+// Parámetros:
+//   fechaDesde, fechaHasta  (requeridos, 'YYYY-MM-DD', inclusive)
+//   planId                  (opcional) restringe a un plan
+//   incluirCanceladas=1     (opcional) suma canceladas y suspendidas
+//   limite                  (opcional) corte de filas del detalle
+exports.gimnasioSuscripcionesVigentes = async (req, res) => {
+  try {
+    const rango = parseRangoFechas(req);
+    if (rango.error) return res.status(400).json({ error: rango.error });
+
+    const planId = req.query.planId ? parseInt(req.query.planId, 10) : null;
+    if (req.query.planId && (!planId || planId < 1)) {
+      return res.status(400).json({ error: "Parametro planId invalido" });
+    }
+    const limiteCrudo = req.query.limite ? parseInt(req.query.limite, 10) : 500;
+    const limiteDetalle = Math.min(
+      Math.max(Number.isFinite(limiteCrudo) ? limiteCrudo : 500, 1),
+      2000
+    );
+    const incluirCanceladas =
+      req.query.incluirCanceladas === "1" ||
+      req.query.incluirCanceladas === "true";
+
+    const paso = pasoParaRango(rango.dias);
+
+    const reporte = await Suscripcion.getReporteVigentes({
+      desde: rango.desde,
+      hasta: rango.hasta,
+      paso,
+      planId,
+      incluirCanceladas,
+      limiteDetalle,
+    });
+
+    // `pico` es el día de mayor cantidad de vigentes del rango: sirve para
+    // dimensionar la sala (el promedio esconde el peor día).
+    let pico = null;
+    for (const p of reporte.serie) {
+      if (!pico || p.suscripciones > pico.suscripciones) pico = p;
+    }
+    const promedio = reporte.serie.length
+      ? Number(
+          (
+            reporte.serie.reduce((a, p) => a + p.suscripciones, 0) /
+            reporte.serie.length
+          ).toFixed(2)
+        )
+      : 0;
+
+    res.json({
+      fechaDesde: rango.desde,
+      fechaHasta: rango.hasta,
+      dias: rango.dias,
+      paso,
+      planId,
+      incluirCanceladas,
+      resumen: { ...reporte.resumen, promedioDiario: promedio, pico },
+      serie: reporte.serie,
+      detalle: reporte.detalle,
+      detalleTruncado: reporte.detalleTruncado,
+      limiteDetalle: reporte.limiteDetalle,
     });
   } catch (e) {
     sendError(res, e, 500);

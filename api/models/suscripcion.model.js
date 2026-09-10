@@ -616,6 +616,253 @@ const Suscripcion = {
       });
     });
   },
+
+  /**
+   * Reporte de suscripciones VIGENTES en un rango de fechas.
+   *
+   * "Vigente en el rango" = la vigencia de la suscripción SE SOLAPA con el
+   * rango pedido, es decir `inicio <= hasta AND fin >= desde`. No alcanza con
+   * mirar sólo la fecha de inicio (que es lo que hace el reporte de ocupación
+   * mensual de reportes.controller): el socio que arrancó en marzo y sigue
+   * pagando en junio está vigente en junio aunque no se haya inscrito ese
+   * mes. Contar por fecha de inicio responde "cuántos entraron", no "cuántos
+   * hay".
+   *
+   * Devuelve tres cosas, porque "cuántas suscripciones vigentes hay en este
+   * rango" tiene dos lecturas legítimas y conviene mostrar las dos:
+   *
+   *   - `resumen`: cuántas suscripciones DISTINTAS estuvieron vigentes en
+   *     algún momento del rango, más socios distintos, altas y bajas.
+   *   - `serie`: cuántas había vigentes EN CADA FECHA. Es un stock, no un
+   *     acumulado: cada punto es una foto de ese día y los puntos NO se suman
+   *     entre sí. Es lo que contesta "cuántos socios activos tenía el 15 de
+   *     mayo".
+   *   - `detalle`: la lista, con el inicio y el fin de cada suscripción.
+   *
+   * SOBRE CANCELADAS Y SUSPENDIDAS: se excluyen por defecto, igual que en el
+   * resto del módulo. La limitación de fondo es que `SuscripcionEstado` no
+   * guarda CUÁNDO se canceló, así que una cancelada hoy desaparece también
+   * del pasado, donde sí estuvo vigente, y eso subestima los rangos
+   * históricos. `incluirCanceladas` permite ver el otro extremo (contarlas
+   * siempre) y comparar; la cifra exacta necesitaría una fecha de baja en la
+   * tabla, que hoy no existe.
+   *
+   * @param {string}  desde              'YYYY-MM-DD' inclusive.
+   * @param {string}  hasta              'YYYY-MM-DD' inclusive.
+   * @param {string}  paso               grano de la serie: 'dia'|'semana'|'mes'.
+   * @param {number?} planId             filtrar por plan.
+   * @param {boolean} incluirCanceladas  contar también C y S.
+   * @param {number}  limiteDetalle      corte de filas del detalle.
+   */
+  getReporteVigentes: ({
+    desde,
+    hasta,
+    paso = "dia",
+    planId = null,
+    incluirCanceladas = false,
+    limiteDetalle = 500,
+  }) => {
+    const queryAsync = (sql, params) =>
+      new Promise((resolve, reject) => {
+        db.query(sql, params || [], (err, rows) =>
+          err ? reject(err) : resolve(rows)
+        );
+      });
+
+    // El paso se interpola en el SQL (un INTERVAL no admite placeholder sin
+    // castear), así que sale de una tabla fija y nunca de la query string.
+    const INTERVALOS = { dia: "1 day", semana: "1 week", mes: "1 month" };
+    const intervalo = INTERVALOS[paso] || INTERVALOS.dia;
+
+    const condEstado = incluirCanceladas
+      ? ""
+      : " AND s.SuscripcionEstado NOT IN ('C','S')";
+    const condPlan = planId ? " AND s.PlanId = ?" : "";
+    const paramsPlan = planId ? [planId] : [];
+
+    // Solapamiento con el rango. Las fechas nulas quedan afuera: sin vigencia
+    // definida no hay nada que contar.
+    const whereSolape = `
+      WHERE s.SuscripcionFechaInicio IS NOT NULL
+        AND s.SuscripcionFechaFin IS NOT NULL
+        AND DATE(s.SuscripcionFechaInicio) <= ?::date
+        AND DATE(s.SuscripcionFechaFin) >= ?::date
+        ${condEstado}${condPlan}
+    `;
+
+    const sqlResumen = `
+      SELECT COUNT(*)::int AS suscripciones,
+             COUNT(DISTINCT s.ClienteId)::int AS socios,
+             COUNT(*) FILTER (
+               WHERE DATE(s.SuscripcionFechaInicio) >= ?::date
+             )::int AS altas,
+             COUNT(*) FILTER (
+               WHERE DATE(s.SuscripcionFechaFin) <= ?::date
+             )::int AS bajas,
+             COUNT(*) FILTER (
+               WHERE DATE(s.SuscripcionFechaInicio) <= ?::date
+                 AND DATE(s.SuscripcionFechaFin) >= ?::date
+             )::int AS completas
+      FROM suscripcion s
+      ${whereSolape}
+    `;
+
+    // Foto puntual: cuántas vigentes en UNA fecha. Se usa para los extremos
+    // del rango, que la serie no siempre incluye: con paso semanal o mensual
+    // el último punto generado puede caer antes de `hasta`.
+    const sqlPuntual = `
+      SELECT COUNT(*)::int AS suscripciones,
+             COUNT(DISTINCT s.ClienteId)::int AS socios
+      FROM suscripcion s
+      WHERE s.SuscripcionFechaInicio IS NOT NULL
+        AND s.SuscripcionFechaFin IS NOT NULL
+        AND DATE(s.SuscripcionFechaInicio) <= ?::date
+        AND DATE(s.SuscripcionFechaFin) >= ?::date
+        ${condEstado}${condPlan}
+    `;
+
+    // Serie: una fila por fecha generada. El LEFT JOIN es lo que hace que los
+    // días sin nadie vigente aparezcan en cero en vez de desaparecer del
+    // gráfico — un hueco se lee como "no hay dato", un cero se lee como "no
+    // había nadie", que es lo que efectivamente pasó.
+    const sqlSerie = `
+      SELECT g.dia::date::text AS fecha,
+             COUNT(s.SuscripcionId)::int AS suscripciones,
+             COUNT(DISTINCT s.ClienteId)::int AS socios
+      FROM generate_series(?::date, ?::date, INTERVAL '${intervalo}') AS g(dia)
+      LEFT JOIN suscripcion s
+             ON s.SuscripcionFechaInicio IS NOT NULL
+            AND s.SuscripcionFechaFin IS NOT NULL
+            AND DATE(s.SuscripcionFechaInicio) <= g.dia::date
+            AND DATE(s.SuscripcionFechaFin) >= g.dia::date
+            ${condEstado}${condPlan}
+      GROUP BY g.dia
+      ORDER BY g.dia
+    `;
+
+    // Detalle. `diasenrango` es cuántos días de esa suscripción caen DENTRO
+    // del rango pedido, no su duración total: es lo que deja ver que un plan
+    // anual aporta sólo los 30 días del mes consultado.
+    const sqlDetalle = `
+      SELECT s.SuscripcionId, s.ClienteId, s.PlanId,
+             s.SuscripcionFechaInicio, s.SuscripcionFechaFin,
+             s.SuscripcionEstado, s.SuscripcionClasesRestantes,
+             c.ClienteNombre, c.ClienteApellido, c.ClienteRUC, c.ClienteTelefono,
+             p.PlanNombre, p.PlanPrecio, p.PlanModalidad,
+             COALESCE(pg.totalpagado, 0)::bigint AS totalpagado,
+             (LEAST(DATE(s.SuscripcionFechaFin), ?::date)
+              - GREATEST(DATE(s.SuscripcionFechaInicio), ?::date) + 1)::int
+               AS diasenrango,
+             (DATE(s.SuscripcionFechaFin)
+              - DATE(s.SuscripcionFechaInicio) + 1)::int AS diastotales
+      FROM suscripcion s
+      LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
+      LEFT JOIN plan p ON s.PlanId = p.PlanId
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(PagoMonto), 0) as totalpagado
+        FROM pago WHERE SuscripcionId = s.SuscripcionId
+      ) pg ON true
+      ${whereSolape}
+      ORDER BY DATE(s.SuscripcionFechaFin) ASC,
+               c.ClienteApellido ASC, c.ClienteNombre ASC,
+               s.SuscripcionId ASC
+      LIMIT ?
+    `;
+
+    // Pedimos una fila de más que el límite: si vuelve, sabemos que el
+    // detalle quedó cortado y el frontend lo avisa, en vez de mostrar una
+    // lista incompleta como si fuera todo.
+    const limitePedido = Math.max(1, Number(limiteDetalle) || 500);
+
+    return Promise.all([
+      queryAsync(sqlResumen, [
+        desde, // altas: inicio >= desde
+        hasta, // bajas: fin <= hasta
+        desde, // completas: inicio <= desde
+        hasta, // completas: fin >= hasta
+        hasta, // solape: inicio <= hasta
+        desde, // solape: fin >= desde
+        ...paramsPlan,
+      ]),
+      queryAsync(sqlSerie, [desde, hasta, ...paramsPlan]),
+      queryAsync(sqlDetalle, [
+        hasta, // LEAST(fin, hasta)
+        desde, // GREATEST(inicio, desde)
+        hasta, // solape
+        desde, // solape
+        ...paramsPlan,
+        limitePedido + 1,
+      ]),
+      queryAsync(sqlPuntual, [desde, desde, ...paramsPlan]),
+      queryAsync(sqlPuntual, [hasta, hasta, ...paramsPlan]),
+    ]).then(([resumenRows, serieRows, detalleRows, alInicio, alFin]) => {
+      const r = resumenRows[0] || {};
+      const truncado = detalleRows.length > limitePedido;
+      const filas = truncado ? detalleRows.slice(0, limitePedido) : detalleRows;
+
+      const detalle = filas.map((f) => {
+        const precio = Number(f.PlanPrecio || 0);
+        const pagado = Number(f.totalpagado || 0);
+        return {
+          suscripcionId: f.SuscripcionId,
+          clienteId: f.ClienteId,
+          socio:
+            [f.ClienteNombre, f.ClienteApellido].filter(Boolean).join(" ") ||
+            `Cliente ${f.ClienteId}`,
+          ruc: f.ClienteRUC || "",
+          telefono: f.ClienteTelefono || "",
+          planId: f.PlanId,
+          plan: f.PlanNombre || "",
+          planPrecio: precio,
+          modalidad: f.PlanModalidad || "MENSUAL",
+          clasesRestantes: Number(f.SuscripcionClasesRestantes || 0),
+          fechaInicio: String(f.SuscripcionFechaInicio).split("T")[0],
+          fechaFin: String(f.SuscripcionFechaFin).split("T")[0],
+          diasEnRango: Number(f.diasenrango || 0),
+          diasTotales: Number(f.diastotales || 0),
+          // Estado a HOY, no dentro del rango: C y S son manuales y se
+          // respetan; el resto se recalcula por fechas como en todo el
+          // módulo, para que la columna diga lo mismo que la pantalla de
+          // Suscripciones.
+          estado:
+            f.SuscripcionEstado === "C" || f.SuscripcionEstado === "S"
+              ? f.SuscripcionEstado
+              : calcularEstadoPorFechas(
+                  f.SuscripcionFechaInicio,
+                  f.SuscripcionFechaFin
+                ),
+          estadoPago: precio === 0 || pagado >= precio ? "PAGADA" : "PENDIENTE",
+          totalPagado: pagado,
+          saldoPendiente: Math.max(precio - pagado, 0),
+        };
+      });
+
+      return {
+        resumen: {
+          suscripciones: Number(r.suscripciones || 0),
+          socios: Number(r.socios || 0),
+          // Arrancaron dentro del rango: las altas del período.
+          altas: Number(r.altas || 0),
+          // Terminan dentro del rango: son las que hay que renovar.
+          bajas: Number(r.bajas || 0),
+          // Cubren el rango entero, de punta a punta.
+          completas: Number(r.completas || 0),
+          vigentesAlInicio: Number(alInicio[0]?.suscripciones || 0),
+          sociosAlInicio: Number(alInicio[0]?.socios || 0),
+          vigentesAlFin: Number(alFin[0]?.suscripciones || 0),
+          sociosAlFin: Number(alFin[0]?.socios || 0),
+        },
+        serie: serieRows.map((s) => ({
+          fecha: String(s.fecha).split("T")[0],
+          suscripciones: Number(s.suscripciones || 0),
+          socios: Number(s.socios || 0),
+        })),
+        detalle,
+        detalleTruncado: truncado,
+        limiteDetalle: limitePedido,
+      };
+    });
+  },
 };
 
 module.exports = Suscripcion;

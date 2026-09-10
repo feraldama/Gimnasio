@@ -62,6 +62,7 @@ const navigation: NavigationItem[] = [
     children: [
       { name: "Suscripciones", href: "/suscripciones" },
       { name: "Vencimientos", href: "/vencimientos" },
+      { name: "Suscripciones vigentes", href: "/suscripciones-vigentes" },
       { name: "Pagos", href: "/pagos" },
       { name: "Planes", href: "/planes" },
       { name: "Cobro de Créditos", href: "/credito-pagos" },

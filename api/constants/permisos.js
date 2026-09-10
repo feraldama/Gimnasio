@@ -58,6 +58,17 @@ const LECTORES_REPORTE_STOCK = ["REPORTES", "INVENTARIO", "PRODUCTOS"];
 // Gráficos del dashboard de reportes.
 const LECTORES_REPORTE_GRAFICO = ["REPORTESGRAFICOS", "REPORTES"];
 
+// Reporte de suscripciones vigentes por rango de fechas. Vive en /reportes
+// pero lo abre el mostrador desde la sección Gimnasio, así que SUSCRIPCIONES
+// alcanza: quien puede ver la grilla de suscripciones puede ver cuántas hay
+// vigentes. Sin SUSCRIPCIONES en la lista, el perfil de mostrador entraba a
+// la pantalla (el frontend la gatea con ese mismo permiso) y recibía un 403.
+const LECTORES_REPORTE_SUSCRIPCIONES = [
+  "SUSCRIPCIONES",
+  "REPORTESGRAFICOS",
+  "REPORTES",
+];
+
 // Combos: el POS los lista para vender.
 const LECTORES_COMBO = ["COMBOS", "NUEVAVENTA", "VENTAS"];
 
@@ -138,6 +149,7 @@ module.exports = {
   LECTORES_LOCAL,
   LECTORES_REPORTE_STOCK,
   LECTORES_REPORTE_GRAFICO,
+  LECTORES_REPORTE_SUSCRIPCIONES,
   LECTORES_COMBO,
   LECTORES_CAJA,
   AJUSTAN_CAJA_MONTO,

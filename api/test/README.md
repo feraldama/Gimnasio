@@ -26,6 +26,7 @@ avisan por qué. Es lo que conviene poner en un hook de pre-commit o en CI.
 | `integration/canchaTarifa.test.js` | qué precio se cobra en cada banda horaria |
 | `integration/cajaAperturaCierre.test.js` | que el registro contable y el movimiento del monto sean atómicos |
 | `integration/rucDv.datos.test.js` | cruza el DV contra los clientes importados (sólo lee) |
+| `integration/suscripcionesVigentes.test.js` | qué cuenta el reporte por rango: solapamiento, bordes inclusivos, suscripciones vs socios |
 
 ## Por qué los unitarios no tocan la base
 

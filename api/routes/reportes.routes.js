@@ -3,7 +3,10 @@ const router = express.Router();
 const ctrl = require("../controllers/reportes.controller");
 const authMiddleware = require("../middlewares/auth");
 const { requireAnyPerm } = require("../middlewares/permission");
-const { LECTORES_REPORTE_GRAFICO } = require("../constants/permisos");
+const {
+  LECTORES_REPORTE_GRAFICO,
+  LECTORES_REPORTE_SUSCRIPCIONES,
+} = require("../constants/permisos");
 
 router.use(authMiddleware);
 
@@ -11,6 +14,11 @@ router.get(
   "/gimnasio/ocupacion",
   requireAnyPerm(LECTORES_REPORTE_GRAFICO, "leer"),
   ctrl.gimnasioOcupacion
+);
+router.get(
+  "/gimnasio/suscripciones-vigentes",
+  requireAnyPerm(LECTORES_REPORTE_SUSCRIPCIONES, "leer"),
+  ctrl.gimnasioSuscripcionesVigentes
 );
 router.get(
   "/cancha/diario",

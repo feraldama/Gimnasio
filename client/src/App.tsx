@@ -51,6 +51,9 @@ const SuscripcionesPage = lazy(
 const VencimientosPage = lazy(
   () => import("./pages/suscripciones/VencimientosPage")
 );
+const SuscripcionesVigentesPage = lazy(
+  () => import("./pages/suscripciones/SuscripcionesVigentesPage")
+);
 const PlanesPage = lazy(() => import("./pages/planes/PlanesPage"));
 const PagosPage = lazy(() => import("./pages/pagos/PagosPage"));
 const ReporteCobranzaPage = lazy(
@@ -188,6 +191,10 @@ function App() {
               <Route
                 path="/vencimientos"
                 element={<VencimientosPage />}
+              />
+              <Route
+                path="/suscripciones-vigentes"
+                element={<SuscripcionesVigentesPage />}
               />
               <Route path="/pagos" element={<PagosPage />} />
               <Route
