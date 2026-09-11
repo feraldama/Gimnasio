@@ -653,6 +653,12 @@ const Suscripcion = {
    * @param {number?} planId             filtrar por plan.
    * @param {boolean} incluirCanceladas  contar también C y S.
    * @param {number}  limiteDetalle      corte de filas del detalle.
+   * @param {boolean} soloResumen        saltear serie, detalle y desglose por
+   *                                     plan. Lo usa la comparación contra el
+   *                                     período anterior, que sólo necesita
+   *                                     los totales: correr las cinco
+   *                                     consultas para descartar cuatro sería
+   *                                     duplicar el costo del reporte.
    */
   getReporteVigentes: ({
     desde,
@@ -661,6 +667,7 @@ const Suscripcion = {
     planId = null,
     incluirCanceladas = false,
     limiteDetalle = 500,
+    soloResumen = false,
   }) => {
     const queryAsync = (sql, params) =>
       new Promise((resolve, reject) => {
@@ -705,6 +712,28 @@ const Suscripcion = {
              )::int AS completas
       FROM suscripcion s
       ${whereSolape}
+    `;
+
+    // Desglose por plan. Responde "cuántos vigentes de cada plan" sin obligar
+    // al usuario a cambiar el filtro una vez por plan y anotar los números a
+    // mano. Va por PlanId y no por nombre: dos planes distintos pueden
+    // haberse llamado igual a lo largo del tiempo.
+    const sqlPorPlan = `
+      -- s.PlanId va SIN alias a propósito: el adaptador de config/db renombra
+      -- a PascalCase todo campo que venga de una columna real (mira el
+      -- tableID de la metadata, no el alias), así que un 'AS planid' se
+      -- pierde igual y el JS terminaba leyendo undefined. Las agregaciones de
+      -- al lado sí conservan su alias porque son expresiones.
+      SELECT s.PlanId,
+             MAX(p.PlanNombre) AS plannombre,
+             MAX(p.PlanPrecio) AS planprecio,
+             COUNT(*)::int AS suscripciones,
+             COUNT(DISTINCT s.ClienteId)::int AS socios
+      FROM suscripcion s
+      LEFT JOIN plan p ON s.PlanId = p.PlanId
+      ${whereSolape}
+      GROUP BY s.PlanId
+      ORDER BY COUNT(*) DESC, MAX(p.PlanNombre) ASC
     `;
 
     // Foto puntual: cuántas vigentes en UNA fecha. Se usa para los extremos
@@ -753,6 +782,15 @@ const Suscripcion = {
              (LEAST(DATE(s.SuscripcionFechaFin), ?::date)
               - GREATEST(DATE(s.SuscripcionFechaInicio), ?::date) + 1)::int
                AS diasenrango,
+             -- Tramo EFECTIVO dentro del rango, recortado a los extremos.
+             -- Para una suscripción del 5/5 al 5/6 consultada sobre junio
+             -- entero da 01/06 → 05/06: es la respuesta literal a "hasta
+             -- cuándo estuvo cubierto este socio en el período que pedí",
+             -- que si no hay que deducir mentalmente cruzando la fecha de fin
+             -- con el rango.
+             GREATEST(DATE(s.SuscripcionFechaInicio), ?::date)::text
+               AS cubredesde,
+             LEAST(DATE(s.SuscripcionFechaFin), ?::date)::text AS cubrehasta,
              (DATE(s.SuscripcionFechaFin)
               - DATE(s.SuscripcionFechaInicio) + 1)::int AS diastotales
       FROM suscripcion s
@@ -774,6 +812,11 @@ const Suscripcion = {
     // lista incompleta como si fuera todo.
     const limitePedido = Math.max(1, Number(limiteDetalle) || 500);
 
+    // `soloResumen` reemplaza las tres consultas pesadas por promesas vacías
+    // en vez de sacarlas del Promise.all: así el destructuring de abajo sigue
+    // teniendo la misma forma y no hay dos caminos que mantener.
+    const vacio = Promise.resolve([]);
+
     return Promise.all([
       queryAsync(sqlResumen, [
         desde, // altas: inicio >= desde
@@ -784,18 +827,25 @@ const Suscripcion = {
         desde, // solape: fin >= desde
         ...paramsPlan,
       ]),
-      queryAsync(sqlSerie, [desde, hasta, ...paramsPlan]),
-      queryAsync(sqlDetalle, [
-        hasta, // LEAST(fin, hasta)
-        desde, // GREATEST(inicio, desde)
-        hasta, // solape
-        desde, // solape
-        ...paramsPlan,
-        limitePedido + 1,
-      ]),
+      soloResumen ? vacio : queryAsync(sqlSerie, [desde, hasta, ...paramsPlan]),
+      soloResumen
+        ? vacio
+        : queryAsync(sqlDetalle, [
+            hasta, // diasenrango: LEAST(fin, hasta)
+            desde, // diasenrango: GREATEST(inicio, desde)
+            desde, // cubredesde
+            hasta, // cubrehasta
+            hasta, // solape: inicio <= hasta
+            desde, // solape: fin >= desde
+            ...paramsPlan,
+            limitePedido + 1,
+          ]),
       queryAsync(sqlPuntual, [desde, desde, ...paramsPlan]),
       queryAsync(sqlPuntual, [hasta, hasta, ...paramsPlan]),
-    ]).then(([resumenRows, serieRows, detalleRows, alInicio, alFin]) => {
+      soloResumen
+        ? vacio
+        : queryAsync(sqlPorPlan, [hasta, desde, ...paramsPlan]),
+    ]).then(([resumenRows, serieRows, detalleRows, alInicio, alFin, planRows]) => {
       const r = resumenRows[0] || {};
       const truncado = detalleRows.length > limitePedido;
       const filas = truncado ? detalleRows.slice(0, limitePedido) : detalleRows;
@@ -818,6 +868,11 @@ const Suscripcion = {
           clasesRestantes: Number(f.SuscripcionClasesRestantes || 0),
           fechaInicio: String(f.SuscripcionFechaInicio).split("T")[0],
           fechaFin: String(f.SuscripcionFechaFin).split("T")[0],
+          // Vigencia real de la suscripción vs. tramo que cae en el rango
+          // consultado. Son distintos justamente cuando la suscripción cruza
+          // un extremo, que es el caso interesante del reporte.
+          cubreDesde: String(f.cubredesde).split("T")[0],
+          cubreHasta: String(f.cubrehasta).split("T")[0],
           diasEnRango: Number(f.diasenrango || 0),
           diasTotales: Number(f.diastotales || 0),
           // Estado a HOY, no dentro del rango: C y S son manuales y se
@@ -856,6 +911,13 @@ const Suscripcion = {
           fecha: String(s.fecha).split("T")[0],
           suscripciones: Number(s.suscripciones || 0),
           socios: Number(s.socios || 0),
+        })),
+        porPlan: planRows.map((p) => ({
+          planId: p.PlanId,
+          plan: p.plannombre || `Plan ${p.PlanId}`,
+          planPrecio: Number(p.planprecio || 0),
+          suscripciones: Number(p.suscripciones || 0),
+          socios: Number(p.socios || 0),
         })),
         detalle,
         detalleTruncado: truncado,

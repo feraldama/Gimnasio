@@ -22,6 +22,7 @@ avisan por qué. Es lo que conviene poner en un hook de pre-commit o en CI.
 | `permission.test.js` | middleware de permisos, con la base simulada |
 | `utils.test.js` | escape de LIKE, sigla del día para tarifas, métodos que mueven el cajón |
 | `cajaApertura.test.js` | regla de apertura/cierre de caja (no reabrir, no recerrar) |
+| `rangoFechas.test.js` | validación del rango de fechas de los reportes: fechas imposibles, rango invertido, grano de la serie |
 | `integration/asistenciaCupo.test.js` | descuento de cupo de clases y su atomicidad |
 | `integration/canchaTarifa.test.js` | qué precio se cobra en cada banda horaria |
 | `integration/cajaAperturaCierre.test.js` | que el registro contable y el movimiento del monto sean atómicos |

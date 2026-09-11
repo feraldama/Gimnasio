@@ -9,6 +9,7 @@ const Configuracion = require("../models/configuracion.model");
 const CanchaReserva = require("../models/canchaReserva.model");
 const { CanchaTarifa, siglaDia } = require("../models/canchaTarifa.model");
 const Suscripcion = require("../models/suscripcion.model");
+const { toLocalISODate, addDaysLocal } = require("../utils/dateUtils");
 const { sendError } = require("../utils/errors");
 
 // Horario operativo de Cancha: configurable via `configuracion`. Defaults
@@ -63,8 +64,19 @@ function parseRangoFechas(req) {
   const [yb, mb, dbb] = hasta.split("-").map(Number);
   const inicio = new Date(ya, ma - 1, da);
   const fin = new Date(yb, mb - 1, dbb);
-  if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) {
-    return { error: "Fechas invalidas" };
+  // El regex sólo mira la FORMA: '2026-02-31' y '2026-13-01' la pasan. El
+  // constructor de Date no falla con esos, los desborda en silencio (al 3 de
+  // marzo y al 1 de enero de 2027). Si dejáramos pasar el string original,
+  // Postgres lo rechaza al castear a ::date y el usuario recibe un 500
+  // "Error interno" en vez de saber que escribió mal la fecha. Comparar el
+  // ida y vuelta es lo que detecta el desborde.
+  if (
+    isNaN(inicio.getTime()) ||
+    isNaN(fin.getTime()) ||
+    toLocalISODate(inicio) !== desde ||
+    toLocalISODate(fin) !== hasta
+  ) {
+    return { error: "Fechas invalidas (revisar dia y mes)" };
   }
   const dias = Math.round((fin - inicio) / 86400000) + 1;
   if (dias > RANGO_MAXIMO_DIAS) {
@@ -85,6 +97,12 @@ function pasoParaRango(dias) {
   if (dias <= 400) return "semana";
   return "mes";
 }
+
+// Exportadas para poder testear la validación sin levantar la base: es el
+// borde por donde entra texto del usuario y donde una fecha imposible
+// ('2026-02-31') se convertía en un 500 en vez de un mensaje entendible.
+exports.parseRangoFechas = parseRangoFechas;
+exports.pasoParaRango = pasoParaRango;
 
 // Mapea un dia (1-31) a la semana del mes con bucketing fijo:
 //   dias 1-7   -> 1, 8-14 -> 2, 15-21 -> 3, 22-fin -> 4
@@ -645,6 +663,8 @@ exports.canchaDesglose = async (req, res) => {
 //   planId                  (opcional) restringe a un plan
 //   incluirCanceladas=1     (opcional) suma canceladas y suspendidas
 //   limite                  (opcional) corte de filas del detalle
+//   comparar=1              (opcional) agrega los totales del período
+//                           inmediatamente anterior, del mismo largo
 exports.gimnasioSuscripcionesVigentes = async (req, res) => {
   try {
     const rango = parseRangoFechas(req);
@@ -662,20 +682,53 @@ exports.gimnasioSuscripcionesVigentes = async (req, res) => {
     const incluirCanceladas =
       req.query.incluirCanceladas === "1" ||
       req.query.incluirCanceladas === "true";
+    const comparar =
+      req.query.comparar === "1" || req.query.comparar === "true";
 
     const paso = pasoParaRango(rango.dias);
 
-    const reporte = await Suscripcion.getReporteVigentes({
-      desde: rango.desde,
-      hasta: rango.hasta,
-      paso,
-      planId,
-      incluirCanceladas,
-      limiteDetalle,
-    });
+    // Período anterior: el bloque CONTIGUO de igual largo que termina el día
+    // antes de `desde`. Para junio (30 días) da mayo entero; para "últimos 30
+    // días" da los 30 anteriores. No se usa "el mismo mes del año pasado" a
+    // propósito: el rango acá es libre, y desplazar un año un rango de 12 días
+    // no significa nada. Igual largo es la única comparación que siempre vale.
+    const rangoPrevio = comparar
+      ? {
+          desde: addDaysLocal(rango.desde, -rango.dias),
+          hasta: addDaysLocal(rango.desde, -1),
+        }
+      : null;
 
-    // `pico` es el día de mayor cantidad de vigentes del rango: sirve para
-    // dimensionar la sala (el promedio esconde el peor día).
+    const [reporte, previo] = await Promise.all([
+      Suscripcion.getReporteVigentes({
+        desde: rango.desde,
+        hasta: rango.hasta,
+        paso,
+        planId,
+        incluirCanceladas,
+        limiteDetalle,
+      }),
+      rangoPrevio
+        ? Suscripcion.getReporteVigentes({
+            desde: rangoPrevio.desde,
+            hasta: rangoPrevio.hasta,
+            planId,
+            incluirCanceladas,
+            // Del período anterior sólo interesan los totales: pedir la serie,
+            // el detalle y el desglose para tirarlos duplicaría el costo.
+            soloResumen: true,
+          })
+        : Promise.resolve(null),
+    ]);
+
+    // `pico` sirve para dimensionar la sala: el promedio esconde el peor día.
+    //
+    // OJO CON LA UNIDAD, y por eso los campos NO se llaman "promedioDiario" ni
+    // "diaPico": ambos se calculan sobre los PUNTOS DE LA SERIE, y la serie es
+    // diaria sólo cuando `paso === "dia"`. En un rango anual la serie es
+    // semanal, así que el pico es el mejor punto muestreado — el día pico real
+    // puede caer en una fecha que no se muestreó y ser más alto. El frontend
+    // etiqueta según `paso` para no prometer precisión que no hay.
     let pico = null;
     for (const p of reporte.serie) {
       if (!pico || p.suscripciones > pico.suscripciones) pico = p;
@@ -696,8 +749,15 @@ exports.gimnasioSuscripcionesVigentes = async (req, res) => {
       paso,
       planId,
       incluirCanceladas,
-      resumen: { ...reporte.resumen, promedioDiario: promedio, pico },
+      resumen: { ...reporte.resumen, promedioSerie: promedio, pico },
+      // null cuando no se pidió comparación. El frontend lo usa como
+      // interruptor: sin esto, mostrar "0 vs 0" haría creer que el período
+      // anterior estuvo vacío, cuando en realidad nunca se consultó.
+      comparacion: previo
+        ? { ...rangoPrevio, resumen: previo.resumen }
+        : null,
       serie: reporte.serie,
+      porPlan: reporte.porPlan,
       detalle: reporte.detalle,
       detalleTruncado: reporte.detalleTruncado,
       limiteDetalle: reporte.limiteDetalle,

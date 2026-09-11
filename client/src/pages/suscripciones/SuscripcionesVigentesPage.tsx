@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -40,6 +41,7 @@ import {
   addDaysLocal,
   formatDateLocal,
   formatMiles,
+  formatMilesWithDecimals,
   todayLocalISO,
 } from "../../utils/utils";
 
@@ -80,6 +82,52 @@ const PASO_LABEL: Record<string, string> = {
   semana: "por semana",
   mes: "por mes",
 };
+
+// El backend baja el grano de la serie en rangos largos, así que "promedio" y
+// "pico" son sobre los puntos muestreados, no sobre los días. Decirlo evita
+// prometer una precisión que no existe: en un rango anual la serie es semanal
+// y el día pico real puede caer en una fecha que nunca se muestreó.
+const PASO_UNIDAD: Record<string, { promedio: string; pico: string }> = {
+  dia: { promedio: "Promedio diario", pico: "pico de" },
+  semana: { promedio: "Promedio de las semanas", pico: "mejor semana con" },
+  mes: { promedio: "Promedio de los meses", pico: "mejor mes con" },
+};
+
+/** Etiqueta del eje X: con paso mensual el año importa, con paso diario no. */
+function etiquetaEje(fecha: string, paso: string): string {
+  const dmy = formatDateLocal(fecha);
+  return paso === "mes" ? dmy.slice(3) : dmy.slice(0, 5);
+}
+
+/**
+ * Variación contra el período anterior, lista para el `trend` del StatCard.
+ *
+ * `mejorSiSube` existe porque la flecha verde no siempre significa lo mismo:
+ * más socios vigentes es bueno, más vencimientos no. Sin esto, la tarjeta de
+ * "Vencen en el período" pintaría de verde un mes con el doble de bajas.
+ *
+ * Devuelve `undefined` cuando no hay período anterior con qué comparar, para
+ * que la tarjeta simplemente no muestre flecha en vez de mostrar un 0% falso.
+ */
+function variacionVsPrevio(
+  actual: number,
+  previo: number | undefined,
+  mejorSiSube = true
+): { direction: "up" | "down" | "flat"; label: string } | undefined {
+  if (previo === undefined || previo === null) return undefined;
+  const delta = actual - previo;
+  if (delta === 0) {
+    return { direction: "flat", label: `igual que el período anterior` };
+  }
+  // Sin base no hay porcentaje que valga: se muestra el absoluto.
+  const pct =
+    previo > 0 ? ` (${delta > 0 ? "+" : ""}${Math.round((delta / previo) * 100)}%)` : "";
+  const subio = delta > 0;
+  return {
+    direction: (subio ? mejorSiSube : !mejorSiSube) ? "up" : "down",
+    label: `${subio ? "+" : ""}${formatMiles(delta)}${pct} vs. período anterior`,
+  };
+}
 
 interface PlanOpcion {
   PlanId: number;
@@ -132,6 +180,11 @@ export default function SuscripcionesVigentesPage() {
 
   const cargar = useCallback(async () => {
     if (!puedeLeer) return;
+    // El efecto se dispara con cada cambio de los inputs. Al vaciar un campo
+    // de fecha el valor queda en "", y sin este corte se mandaba igual y la
+    // pantalla mostraba un error rojo del backend mientras el usuario estaba
+    // en la mitad de elegir el rango.
+    if (!fechaDesde || !fechaHasta) return;
     if (fechaDesde > fechaHasta) {
       setError("La fecha desde no puede ser posterior a la fecha hasta.");
       return;
@@ -142,7 +195,7 @@ export default function SuscripcionesVigentesPage() {
       const resp = await getReporteSuscripcionesVigentes(
         fechaDesde,
         fechaHasta,
-        { planId, incluirCanceladas, limite: 1000 }
+        { planId, incluirCanceladas, limite: 1000, comparar: true }
       );
       setData(resp);
     } catch (e) {
@@ -186,6 +239,21 @@ export default function SuscripcionesVigentesPage() {
     });
   }, [data, busqueda, estadoFiltro]);
 
+  // Vigente por fecha NO es lo mismo que "puede entrar": el kiosko
+  // (Asistencia.estadoAcceso) también exige cupo cuando el plan es por
+  // CLASES. Estas filas figuran vigentes acá y rebotan en la puerta, así que
+  // conviene avisarlo en vez de dejar que el número mienta.
+  //
+  // Sólo aplica a HOY: `SuscripcionClasesRestantes` es el saldo actual, no
+  // hay histórico del cupo, así que esto no se puede reflejar en la serie.
+  const sinCupoHoy = useMemo(
+    () =>
+      (data?.detalle || []).filter(
+        (f) => f.modalidad === "CLASES" && f.clasesRestantes <= 0 && f.estado === "A"
+      ).length,
+    [data]
+  );
+
   const handlePDF = async () => {
     if (!data || generandoPDF) return;
     try {
@@ -222,6 +290,8 @@ export default function SuscripcionesVigentesPage() {
 
   const r = data?.resumen;
   const variacion = r ? r.vigentesAlFin - r.vigentesAlInicio : 0;
+  const unidad = PASO_UNIDAD[data?.paso || "dia"] || PASO_UNIDAD.dia;
+  const prev = data?.comparacion?.resumen;
   const inputCls =
     "mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text focus:border-brand-700 focus:outline-none focus:ring-1 focus:ring-brand-700";
   const labelCls =
@@ -347,9 +417,10 @@ export default function SuscripcionesVigentesPage() {
               value={formatMiles(r.suscripciones)}
               icon={UserGroupIcon}
               tone="brand"
+              trend={variacionVsPrevio(r.suscripciones, prev?.suscripciones)}
               hint={`${formatMiles(r.socios)} socio${
                 r.socios === 1 ? "" : "s"
-              } distinto${r.socios === 1 ? "" : "s"} · alguna vez vigentes entre las dos fechas`}
+              } distinto${r.socios === 1 ? "" : "s"}`}
             />
             <StatCard
               label="Del primer al último día"
@@ -376,28 +447,128 @@ export default function SuscripcionesVigentesPage() {
               value={formatMiles(r.altas)}
               icon={ArrowTrendingUpIcon}
               tone="success"
-              hint="Suscripciones que arrancaron dentro del rango"
+              trend={variacionVsPrevio(r.altas, prev?.altas)}
+              hint="Arrancaron dentro del rango"
             />
             <StatCard
               label="Vencen en el período"
               value={formatMiles(r.bajas)}
               icon={ExclamationTriangleIcon}
               tone="warning"
-              hint="Terminan dentro del rango: son las que hay que renovar"
+              // Más vencimientos NO es una buena noticia: la flecha se
+              // invierte para que subir pinte rojo y no verde.
+              trend={variacionVsPrevio(r.bajas, prev?.bajas, false)}
+              hint="Terminan dentro del rango: hay que renovarlas"
             />
           </div>
+
+          {data.comparacion && (
+            <p className="-mt-2 text-xs text-text-subtle">
+              Las flechas comparan contra el período contiguo anterior, del
+              mismo largo:{" "}
+              <span className="font-num">
+                {formatDateLocal(data.comparacion.desde)} –{" "}
+                {formatDateLocal(data.comparacion.hasta)}
+              </span>{" "}
+              ({formatMiles(data.comparacion.resumen.suscripciones)} vigentes,{" "}
+              {formatMiles(data.comparacion.resumen.socios)} socios).
+            </p>
+          )}
+
+          {/* ---- Desglose por plan ---- */}
+          {data.porPlan.length > 1 && (
+            <Card padding="none">
+              <div className="p-5">
+                <CardHeader
+                  title="Por plan"
+                  description="Qué plan sostiene el plantel. Un socio con dos planes distintos cuenta en los dos, así que la suma de socios puede superar el total."
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-y border-border bg-surface-sunken text-left text-xs uppercase tracking-wider text-text-muted">
+                      <th className="px-4 py-2 font-semibold">Plan</th>
+                      <th className="px-4 py-2 text-right font-semibold">
+                        Suscripciones
+                      </th>
+                      <th className="px-4 py-2 text-right font-semibold">
+                        Socios
+                      </th>
+                      <th className="px-4 py-2 font-semibold">Participación</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.porPlan.map((p) => {
+                      const pct =
+                        r.suscripciones > 0
+                          ? (p.suscripciones / r.suscripciones) * 100
+                          : 0;
+                      return (
+                        <tr
+                          key={p.planId}
+                          className="border-b border-border last:border-0"
+                        >
+                          <td className="px-4 py-2">
+                            {/* Click = filtrar por ese plan, que es lo que el
+                                usuario iba a hacer a mano con el combo. */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPlanId(planId === p.planId ? null : p.planId)
+                              }
+                              className="text-brand-700 hover:underline"
+                              title={
+                                planId === p.planId
+                                  ? "Quitar el filtro"
+                                  : "Filtrar el reporte por este plan"
+                              }
+                            >
+                              {p.plan}
+                            </button>
+                          </td>
+                          <td className="px-4 py-2 text-right font-num text-text">
+                            {formatMiles(p.suscripciones)}
+                          </td>
+                          <td className="px-4 py-2 text-right font-num text-text-muted">
+                            {formatMiles(p.socios)}
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted"
+                                aria-hidden="true"
+                              >
+                                <div
+                                  className="h-full rounded-full bg-brand-600"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <span className="w-12 text-right font-num text-xs text-text-muted">
+                                {pct.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           {/* ---- Evolución ---- */}
           <Card>
             <CardHeader
               title="Vigentes en cada fecha"
-              description={`Cada punto es una foto de ese día (${
+              description={`Cada punto es una foto de ese día (muestreo ${
                 PASO_LABEL[data.paso] || "por día"
-              }), no un acumulado: los valores no se suman entre sí. Promedio del período: ${formatMiles(
-                r.promedioDiario
-              )}${
+              }), no un acumulado: los valores no se suman entre sí. ${
+                unidad.promedio
+              }: ${formatMilesWithDecimals(r.promedioSerie)}${
                 r.pico
-                  ? ` · pico de ${formatMiles(
+                  ? ` · ${unidad.pico} ${formatMiles(
                       r.pico.suscripciones
                     )} el ${formatDateLocal(r.pico.fecha)}`
                   : ""
@@ -409,7 +580,7 @@ export default function SuscripcionesVigentesPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
                     dataKey="fecha"
-                    tickFormatter={(v: string) => formatDateLocal(v).slice(0, 5)}
+                    tickFormatter={(v: string) => etiquetaEje(v, data.paso)}
                     minTickGap={24}
                   />
                   <YAxis allowDecimals={false} />
@@ -418,7 +589,7 @@ export default function SuscripcionesVigentesPage() {
                     formatter={(value) => formatMiles(Number(value ?? 0))}
                   />
                   <ReferenceLine
-                    y={r.promedioDiario}
+                    y={r.promedioSerie}
                     stroke="#94a3b8"
                     strokeDasharray="4 4"
                     label={{ value: "Promedio", position: "right", fontSize: 10 }}
@@ -444,7 +615,11 @@ export default function SuscripcionesVigentesPage() {
                 title={`Detalle — ${formatMiles(detalleFiltrado.length)} de ${formatMiles(
                   data.detalle.length
                 )}`}
-                description="Ordenado por fecha de fin: primero lo que vence antes."
+                description={
+                  sinCupoHoy > 0
+                    ? `Ordenado por fecha de fin. ${sinCupoHoy} con plan por clases y cupo agotado: figuran vigentes pero el kiosko les bloquea la entrada.`
+                    : "Ordenado por fecha de fin: primero lo que vence antes."
+                }
               />
               <div className="flex flex-wrap items-end gap-3">
                 <label className={labelCls}>
@@ -502,8 +677,11 @@ export default function SuscripcionesVigentesPage() {
                       <th className="px-4 py-2 font-semibold">Plan</th>
                       <th className="px-4 py-2 font-semibold">Inicio</th>
                       <th className="px-4 py-2 font-semibold">Fin</th>
+                      <th className="px-4 py-2 font-semibold">
+                        Cubre en el rango
+                      </th>
                       <th className="px-4 py-2 text-right font-semibold">
-                        Días en el rango
+                        Días
                       </th>
                       <th className="px-4 py-2 font-semibold">Estado hoy</th>
                       <th className="px-4 py-2 text-right font-semibold">
@@ -526,20 +704,38 @@ export default function SuscripcionesVigentesPage() {
                           key={f.suscripcionId}
                           className="border-b border-border last:border-0"
                         >
-                          <td className="px-4 py-2 font-medium text-text">
-                            {f.socio}
+                          <td className="px-4 py-2 font-medium">
+                            {f.clienteId ? (
+                              <Link
+                                to={`/clientes/${f.clienteId}/ficha`}
+                                className="text-brand-700 hover:underline"
+                                title="Ver ficha del alumno"
+                              >
+                                {f.socio}
+                              </Link>
+                            ) : (
+                              <span className="text-text">{f.socio}</span>
+                            )}
                           </td>
                           <td className="px-4 py-2 font-num text-text-muted">
                             {f.ruc || "—"}
                           </td>
                           <td className="px-4 py-2 text-text-muted">
                             {f.plan || "—"}
-                            {f.modalidad === "CLASES" && (
-                              <span className="ml-1 font-num text-xs text-info-700">
-                                ({f.clasesRestantes} clase
-                                {f.clasesRestantes === 1 ? "" : "s"})
-                              </span>
-                            )}
+                            {f.modalidad === "CLASES" &&
+                              (f.clasesRestantes > 0 ? (
+                                <span className="ml-1 font-num text-xs text-info-700">
+                                  ({f.clasesRestantes} clase
+                                  {f.clasesRestantes === 1 ? "" : "s"})
+                                </span>
+                              ) : (
+                                <span
+                                  className="ml-1 text-xs font-semibold text-danger-700"
+                                  title="El plan es por clases y el cupo está agotado: el kiosko le bloquea la entrada aunque la fecha de fin todavía no llegó."
+                                >
+                                  (sin cupo)
+                                </span>
+                              ))}
                           </td>
                           <td className="px-4 py-2 font-num text-text">
                             {formatDateLocal(f.fechaInicio)}
@@ -547,12 +743,37 @@ export default function SuscripcionesVigentesPage() {
                           <td className="px-4 py-2 font-num text-text">
                             {formatDateLocal(f.fechaFin)}
                           </td>
+                          {/* Tramo recortado al rango. Es la respuesta directa
+                              a "¿hasta cuándo estuvo cubierto este socio en el
+                              período que pedí?": una suscripción que arranca
+                              antes y termina el 5 muestra 01/xx → 05/xx, sin
+                              obligar a cruzar la fecha de fin con el rango. */}
+                          <td className="px-4 py-2 font-num">
+                            {parcial ? (
+                              <span
+                                className="text-text"
+                                title={`La suscripción corre del ${formatDateLocal(
+                                  f.fechaInicio
+                                )} al ${formatDateLocal(
+                                  f.fechaFin
+                                )}; dentro del rango consultado cubre ${f.diasEnRango} de ${f.diasTotales} días.`}
+                              >
+                                {formatDateLocal(f.cubreDesde)}
+                                <span className="mx-1 text-text-subtle">→</span>
+                                {formatDateLocal(f.cubreHasta)}
+                              </span>
+                            ) : (
+                              <span className="text-text-subtle">
+                                todo el rango
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-2 text-right font-num text-text">
                             {formatMiles(f.diasEnRango)}
                             {parcial && (
                               <span
                                 className="ml-1 text-xs text-text-subtle"
-                                title={`La suscripción dura ${f.diasTotales} días en total; sólo ${f.diasEnRango} caen en el rango consultado.`}
+                                title={`La suscripción dura ${f.diasTotales} días en total.`}
                               >
                                 / {formatMiles(f.diasTotales)}
                               </span>

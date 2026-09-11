@@ -181,8 +181,16 @@ export interface SuscripcionVigenteDetalle {
   planPrecio: number;
   modalidad: string;
   clasesRestantes: number;
+  /** Vigencia real de la suscripción, sin recortar. */
   fechaInicio: string;
   fechaFin: string;
+  /**
+   * Tramo efectivamente cubierto DENTRO del rango consultado. Difiere de
+   * fechaInicio/fechaFin justo cuando la suscripción cruza un extremo: una
+   * del 5/5 al 5/6, consultada sobre junio entero, cubre 01/06 → 05/06.
+   */
+  cubreDesde: string;
+  cubreHasta: string;
   /** Días de esta suscripción que caen dentro del rango consultado. */
   diasEnRango: number;
   diasTotales: number;
@@ -193,6 +201,26 @@ export interface SuscripcionVigenteDetalle {
   saldoPendiente: number;
 }
 
+export interface SuscripcionesVigentesPorPlan {
+  planId: number;
+  plan: string;
+  planPrecio: number;
+  suscripciones: number;
+  socios: number;
+}
+
+export interface SuscripcionesVigentesResumen {
+  suscripciones: number;
+  socios: number;
+  altas: number;
+  bajas: number;
+  completas: number;
+  vigentesAlInicio: number;
+  sociosAlInicio: number;
+  vigentesAlFin: number;
+  sociosAlFin: number;
+}
+
 export interface ReporteSuscripcionesVigentesResponse {
   fechaDesde: string;
   fechaHasta: string;
@@ -201,20 +229,26 @@ export interface ReporteSuscripcionesVigentesResponse {
   paso: "dia" | "semana" | "mes";
   planId: number | null;
   incluirCanceladas: boolean;
-  resumen: {
-    suscripciones: number;
-    socios: number;
-    altas: number;
-    bajas: number;
-    completas: number;
-    vigentesAlInicio: number;
-    sociosAlInicio: number;
-    vigentesAlFin: number;
-    sociosAlFin: number;
-    promedioDiario: number;
+  resumen: SuscripcionesVigentesResumen & {
+    /**
+     * Promedio de los PUNTOS de la serie, no necesariamente de los días: la
+     * serie es diaria sólo si `paso === "dia"`. Mismo criterio para `pico`,
+     * que es el mejor punto muestreado.
+     */
+    promedioSerie: number;
     pico: SuscripcionesVigentesPunto | null;
   };
+  /**
+   * Totales del período contiguo anterior, del mismo largo. `null` cuando no
+   * se pidió comparar — distinto de "el período anterior estuvo vacío".
+   */
+  comparacion: {
+    desde: string;
+    hasta: string;
+    resumen: SuscripcionesVigentesResumen;
+  } | null;
   serie: SuscripcionesVigentesPunto[];
+  porPlan: SuscripcionesVigentesPorPlan[];
   detalle: SuscripcionVigenteDetalle[];
   detalleTruncado: boolean;
   limiteDetalle: number;
@@ -224,6 +258,7 @@ export interface SuscripcionesVigentesOpts {
   planId?: number | null;
   incluirCanceladas?: boolean;
   limite?: number;
+  comparar?: boolean;
 }
 
 export const getReporteSuscripcionesVigentes = async (
@@ -239,6 +274,7 @@ export const getReporteSuscripcionesVigentes = async (
         ...(opts.planId ? { planId: opts.planId } : {}),
         ...(opts.incluirCanceladas ? { incluirCanceladas: 1 } : {}),
         ...(opts.limite ? { limite: opts.limite } : {}),
+        ...(opts.comparar ? { comparar: 1 } : {}),
       },
     });
     return r.data as ReporteSuscripcionesVigentesResponse;

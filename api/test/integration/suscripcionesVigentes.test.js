@@ -32,7 +32,7 @@ describe(
   "reporte de suscripciones vigentes por rango",
   { skip: HABILITADO ? false : "definir RUN_DB_TESTS=1 para correr con base" },
   () => {
-    let db, Suscripcion;
+    let db, Suscripcion, ctrl;
     let planA = null;
     let planB = null;
     const clientes = [];
@@ -82,6 +82,22 @@ describe(
 
     const puntoDe = (serie, fecha) => serie.find((p) => p.fecha === fecha);
 
+    /** Llama al endpoint sin levantar HTTP, con un `res` de mentira. */
+    const llamarEndpoint = (query) =>
+      new Promise((resolve) => {
+        const res = {
+          statusCode: 200,
+          status(c) {
+            this.statusCode = c;
+            return this;
+          },
+          json(body) {
+            resolve({ status: this.statusCode, body });
+          },
+        };
+        ctrl.gimnasioSuscripcionesVigentes({ query }, res);
+      });
+
     async function limpiar() {
       for (const c of clientes) {
         await q(
@@ -96,6 +112,7 @@ describe(
     before(async () => {
       db = require("../../config/db");
       Suscripcion = require("../../models/suscripcion.model");
+      ctrl = require("../../controllers/reportes.controller");
       const a = await q(
         `INSERT INTO plan (PlanNombre, PlanDuracion, PlanPrecio, PlanActivo,
             PlanModalidad, PlanCantidadClases)
@@ -160,6 +177,45 @@ describe(
       // Aporta sólo los 30 días de junio, aunque dure 92.
       assert.equal(d.diasEnRango, DIAS_RANGO);
       assert.equal(d.diasTotales, 92);
+    });
+
+    test("la que termina a los pocos días del rango aparece y dice hasta cuándo cubre", async () => {
+      // El caso que pidió el cliente, textual: suscripción del 5 de mayo al 5
+      // de junio, consultando JUNIO ENTERO. Tiene que aparecer (arrancó antes,
+      // pero estuvo vigente los primeros cinco días) y tiene que quedar claro
+      // que su cobertura llega hasta el 5, sin obligar a nadie a cruzar
+      // mentalmente la fecha de fin con el rango pedido.
+      const c = await nuevoCliente("hasta-el-cinco");
+      await suscribir(c, "2019-05-05", "2019-06-05");
+
+      const r = await reporte();
+      assert.equal(r.resumen.suscripciones, 1, "tiene que aparecer");
+
+      const [d] = r.detalle;
+      // La vigencia real se muestra completa: arranca en mayo.
+      assert.equal(d.fechaInicio, "2019-05-05");
+      assert.equal(d.fechaFin, "2019-06-05");
+      // Y el tramo recortado al rango dice hasta cuándo cubrió en junio.
+      assert.equal(d.cubreDesde, "2019-06-01");
+      assert.equal(d.cubreHasta, "2019-06-05");
+      assert.equal(d.diasEnRango, 5);
+      assert.equal(d.diasTotales, 32);
+      // Es una baja del período: su vigencia termina dentro del rango.
+      assert.equal(r.resumen.bajas, 1);
+      assert.equal(r.resumen.altas, 0, "arrancó antes, no es un alta de junio");
+      // Estaba el primer día y ya no el 6.
+      assert.equal(puntoDe(r.serie, "2019-06-05").suscripciones, 1);
+      assert.equal(puntoDe(r.serie, "2019-06-06").suscripciones, 0);
+    });
+
+    test("la que cubre el rango entero se marca como tal, no recortada", async () => {
+      const c = await nuevoCliente("cubre-todo");
+      await suscribir(c, "2019-01-01", "2019-12-31");
+
+      const [d] = (await reporte()).detalle;
+      assert.equal(d.cubreDesde, DESDE);
+      assert.equal(d.cubreHasta, HASTA);
+      assert.equal(d.diasEnRango, DIAS_RANGO);
     });
 
     test("no cuenta las que quedan enteramente fuera del rango", async () => {
@@ -328,6 +384,124 @@ describe(
       // Los extremos se calculan aparte de la serie justamente porque con paso
       // semanal el último punto generado puede caer antes de `hasta`.
       assert.equal(semanal.resumen.vigentesAlFin, 1);
+    });
+
+    test("el desglose por plan separa los planes y no pierde a nadie", async () => {
+      const a1 = await nuevoCliente("plan-a-uno");
+      await suscribir(a1, "2019-06-01", "2019-06-30");
+      const a2 = await nuevoCliente("plan-a-dos");
+      await suscribir(a2, "2019-06-05", "2019-06-25");
+      const b1 = await nuevoCliente("plan-b-uno");
+      await suscribir(b1, "2019-06-01", "2019-06-30", { planId: planB });
+
+      // Sin filtro de plan el desglose tiene que traer los dos. Se corre sin
+      // `planId` y se filtra en JS porque el reporte agrega sobre toda la base.
+      const r = await Suscripcion.getReporteVigentes({
+        desde: DESDE,
+        hasta: HASTA,
+        paso: "dia",
+      });
+      const mios = r.porPlan.filter((p) => [planA, planB].includes(p.planId));
+      assert.equal(mios.length, 2);
+      const a = mios.find((p) => p.planId === planA);
+      const b = mios.find((p) => p.planId === planB);
+      assert.equal(a.suscripciones, 2);
+      assert.equal(a.socios, 2);
+      assert.equal(a.plan, "TEST-VIG plan A");
+      assert.equal(b.suscripciones, 1);
+      // El id tiene que llegar: el adaptador de config/db renombra a
+      // PascalCase las columnas reales, y con un alias en minúscula el campo
+      // volvía undefined y el filtro por click del frontend no funcionaba.
+      assert.equal(typeof b.planId, "number");
+    });
+
+    test("un socio con dos planes distintos cuenta en los dos", async () => {
+      // Por eso la suma de socios del desglose puede superar el total: es una
+      // propiedad del corte, no un error. Si alguna vez alguien "arregla" esto
+      // sumando las filas, este test lo frena.
+      const c = await nuevoCliente("dos-planes-dist");
+      await suscribir(c, "2019-06-01", "2019-06-30");
+      await suscribir(c, "2019-06-01", "2019-06-30", { planId: planB });
+
+      const r = await Suscripcion.getReporteVigentes({ desde: DESDE, hasta: HASTA });
+      const mios = r.porPlan.filter((p) => [planA, planB].includes(p.planId));
+      assert.equal(mios.length, 2);
+      assert.equal(
+        mios.reduce((s, p) => s + p.socios, 0),
+        2,
+        "aparece una vez por plan"
+      );
+      // Pero como persona es una sola.
+      const solo = await reporte();
+      assert.equal(solo.resumen.socios, 1);
+    });
+
+    test("soloResumen saltea serie, detalle y desglose pero mantiene los totales", async () => {
+      // Es lo que usa la comparación contra el período anterior: si trajera
+      // las cinco consultas, comparar duplicaría el costo del reporte.
+      const c = await nuevoCliente("solo-resumen");
+      await suscribir(c, "2019-05-01", "2019-07-31");
+
+      const completo = await reporte();
+      const liviano = await reporte({ soloResumen: true });
+
+      assert.deepEqual(liviano.serie, []);
+      assert.deepEqual(liviano.detalle, []);
+      assert.deepEqual(liviano.porPlan, []);
+      // Los totales tienen que ser idénticos, incluidas las fotos de los
+      // extremos: son justamente lo que la comparación va a mostrar.
+      assert.equal(liviano.resumen.suscripciones, completo.resumen.suscripciones);
+      assert.equal(liviano.resumen.socios, completo.resumen.socios);
+      assert.equal(
+        liviano.resumen.vigentesAlInicio,
+        completo.resumen.vigentesAlInicio
+      );
+      assert.equal(liviano.resumen.vigentesAlFin, completo.resumen.vigentesAlFin);
+    });
+
+    test("la comparación mira el bloque contiguo anterior del mismo largo", async () => {
+      // Junio son 30 días, así que el período anterior es del 2 al 31 de mayo
+      // y NO mayo entero (31 días). Comparar bloques de distinto largo daría
+      // una variación falsa, y con rangos libres "el mes pasado" no siempre
+      // existe: igual largo es lo único que siempre vale.
+      const viejo = await nuevoCliente("solo-en-mayo");
+      await suscribir(viejo, "2019-05-10", "2019-05-20");
+      const nuevo = await nuevoCliente("solo-en-junio");
+      await suscribir(nuevo, "2019-06-10", "2019-06-20");
+      // Este arranca el 1 de mayo: queda FUERA de la ventana de comparación,
+      // que empieza el 2. Es el caso que delata un off-by-one en el corrimiento.
+      const borde = await nuevoCliente("primero-de-mayo");
+      await suscribir(borde, "2019-05-01", "2019-05-01");
+
+      const r = await llamarEndpoint({
+        fechaDesde: DESDE,
+        fechaHasta: HASTA,
+        planId: String(planA),
+        comparar: "1",
+      });
+      assert.equal(r.status, 200);
+      assert.equal(r.body.comparacion.desde, "2019-05-02");
+      assert.equal(r.body.comparacion.hasta, "2019-05-31");
+      assert.equal(r.body.resumen.suscripciones, 1, "junio: sólo uno");
+      assert.equal(
+        r.body.comparacion.resumen.suscripciones,
+        1,
+        "mayo: el del 10 al 20; el del 1 de mayo queda fuera de la ventana"
+      );
+    });
+
+    test("sin ?comparar la comparación es null, no ceros", async () => {
+      // Un cero se lee como "el período anterior estuvo vacío". Null se lee
+      // como "no se consultó", que es la verdad.
+      const c = await nuevoCliente("sin-comparar");
+      await suscribir(c, "2019-06-01", "2019-06-30");
+
+      const r = await llamarEndpoint({
+        fechaDesde: DESDE,
+        fechaHasta: HASTA,
+        planId: String(planA),
+      });
+      assert.equal(r.body.comparacion, null);
     });
 
     test("el saldo pendiente sale de los pagos imputados a la suscripción", async () => {
