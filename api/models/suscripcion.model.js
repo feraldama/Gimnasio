@@ -70,15 +70,25 @@ function buildSuscripcionFilters(filters = {}) {
 const Suscripcion = {
   getAll: () => {
     return new Promise((resolve, reject) => {
+      // `TotalPagado` y `SaldoPendiente` salen del LATERAL que ya estaba acá
+      // para decidir PAGADA/PENDIENTE: exponerlos no agrega una sola consulta.
+      // Los necesita el buscador de suscripciones del modal de pagos, que
+      // antes sugería el PRECIO DEL PLAN como monto a cobrar. Sobre una
+      // suscripción con pago parcial eso da siempre 400 ("el pago excede el
+      // precio"), porque lo que queda por cobrar es el saldo, no el precio.
+      // La regla vive en pago.controller -> validarCobroSuscripcion.
       const query = `
         SELECT s.*,
-          c.ClienteNombre, c.ClienteApellido,
+          c.ClienteNombre, c.ClienteApellido, c.ClienteRUC,
           p.PlanNombre, p.PlanPrecio,
           CASE
             WHEN COALESCE(p.PlanPrecio, 0) = 0 THEN 'PAGADA'
             WHEN COALESCE(pg.totalpagado, 0) >= p.PlanPrecio THEN 'PAGADA'
             ELSE 'PENDIENTE'
-          END as EstadoPago
+          END as EstadoPago,
+          COALESCE(pg.totalpagado, 0) as TotalPagado,
+          GREATEST(COALESCE(p.PlanPrecio, 0) - COALESCE(pg.totalpagado, 0), 0)
+            as SaldoPendiente
         FROM suscripcion s
         LEFT JOIN clientes c ON s.ClienteId = c.ClienteId
         LEFT JOIN plan p ON s.PlanId = p.PlanId

@@ -2,6 +2,17 @@ const db = require("../config/db");
 const { calcularDV } = require("../utils/rucDv");
 const { escapeLike } = require("../utils/sql");
 
+// `clientes.usuarioid` es FK a `usuario.usuarioid` (constraint `iclientes1`) y
+// admite NULL, pero NO la cadena vacia: el formulario manda `UsuarioId: ""`
+// cuando el cliente no tiene usuario asignado y Postgres rechaza eso con
+// 23503 ("La llave (usuarioid)=() no esta presente en la tabla usuario").
+// MySQL lo toleraba; acá hay que normalizar el vacio a NULL.
+function usuarioIdParaDB(valor) {
+  if (valor === null || valor === undefined) return null;
+  const limpio = String(valor).trim();
+  return limpio === "" ? null : limpio;
+}
+
 // Calcula el DV automaticamente cuando la CI es estrictamente numerica.
 // Si la CI esta vacia o trae caracteres no numericos (placeholders tipo
 // "SIN RUC"), dejamos el DV vacio para no inventar datos. El usuario solo
@@ -201,7 +212,7 @@ const Cliente = {
         clienteData.ClienteDireccion || "",
         clienteData.ClienteTelefono || "",
         clienteData.ClienteTipo || "",
-        clienteData.UsuarioId ? String(clienteData.UsuarioId).trim() : "",
+        usuarioIdParaDB(clienteData.UsuarioId),
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -226,9 +237,8 @@ const Cliente = {
       camposActualizables.forEach((campo) => {
         if (clienteData[campo] !== undefined) {
           updateFields.push(`${campo} = ?`);
-          // Aplicar trim solo al UsuarioId si es string
-          if (campo === "UsuarioId" && typeof clienteData[campo] === "string") {
-            values.push(clienteData[campo].trim());
+          if (campo === "UsuarioId") {
+            values.push(usuarioIdParaDB(clienteData[campo]));
           } else {
             values.push(clienteData[campo]);
           }

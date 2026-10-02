@@ -22,11 +22,13 @@ avisan por qué. Es lo que conviene poner en un hook de pre-commit o en CI.
 | `permission.test.js` | middleware de permisos, con la base simulada |
 | `utils.test.js` | escape de LIKE, sigla del día para tarifas, métodos que mueven el cajón |
 | `cajaApertura.test.js` | regla de apertura/cierre de caja (no reabrir, no recerrar) |
+| `cobroSuscripcion.test.js` | sobre qué suscripciones se puede cobrar (no canceladas ni suspendidas) y el tope de saldo a favor |
 | `rangoFechas.test.js` | validación del rango de fechas de los reportes: fechas imposibles, rango invertido, grano de la serie |
 | `integration/asistenciaCupo.test.js` | descuento de cupo de clases y su atomicidad |
 | `integration/canchaTarifa.test.js` | qué precio se cobra en cada banda horaria |
 | `integration/cajaAperturaCierre.test.js` | que el registro contable y el movimiento del monto sean atómicos |
 | `integration/rucDv.datos.test.js` | cruza el DV contra los clientes importados (sólo lee) |
+| `integration/clienteUsuarioId.test.js` | que un `UsuarioId` vacío se guarde como NULL y no viole la FK a `usuario` |
 | `integration/suscripcionesVigentes.test.js` | qué cuenta el reporte por rango: solapamiento, bordes inclusivos, suscripciones vs socios |
 
 ## Por qué los unitarios no tocan la base

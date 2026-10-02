@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { getAllSuscripcionesSinPaginacion } from "../../services/suscripciones.service";
 import ClienteModal from "../common/ClienteModal";
-import { addDaysLocal, formatMiles, todayLocalISO } from "../../utils/utils";
+import SuscripcionModal from "../suscripciones/SuscripcionModal";
+import {
+  addDaysLocal,
+  formatDateLocal,
+  formatMiles,
+  todayLocalISO,
+} from "../../utils/utils";
 import { PAGO_TIPOS_LIST } from "../../constants/pagoTipos";
 import Swal from "sweetalert2";
 import { useAuth } from "../../contexts/useAuth";
@@ -32,14 +38,39 @@ interface Suscripcion {
   SuscripcionFechaFin?: string;
   ClienteNombre?: string;
   ClienteApellido?: string;
+  ClienteRUC?: string;
   PlanNombre?: string;
   PlanPrecio?: number;
   EstadoPago?: string;
+  /** Lo que falta cobrar: precio del plan menos lo ya pagado. */
+  SaldoPendiente?: number;
+  TotalPagado?: number;
+  /** Vigencia: A activa, V vencida, F futura, C cancelada, S suspendida. */
+  SuscripcionEstado?: string;
   [key: string]: unknown;
 }
 
 const isPlanActivo = (plan: Plan) =>
   plan.PlanActivo === 1 || plan.PlanActivo === true;
+
+/**
+ * Estados sobre los que NO se puede cobrar.
+ *
+ * Espeja la regla del backend (`validarCobroSuscripcion` en
+ * pago.controller.js), que devuelve 409 al intentar un pago sobre una
+ * suscripción cancelada o suspendida. Antes el combo las ofrecía igual: el
+ * operador elegía, cargaba el monto, repartía entre métodos de pago y recién
+ * al confirmar se comía el error. Filtrarlas acá es cerrar la puerta antes,
+ * no en vez de: la validación del servidor sigue siendo la que manda.
+ *
+ * Van las DOS aunque el pedido hablara sólo de canceladas, porque la regla
+ * del servidor no distingue: dejar las suspendidas en la lista sería dejar
+ * exactamente el mismo error a medio arreglar.
+ */
+const ESTADOS_NO_COBRABLES = new Set(["C", "S"]);
+
+const esCobrable = (s: Suscripcion) =>
+  !ESTADOS_NO_COBRABLES.has(String(s.SuscripcionEstado || ""));
 
 /** Un pago individual o array de pagos (cuando se divide en varios métodos) */
 export type PagoSubmitData = Pago | Pago[];
@@ -102,6 +133,30 @@ export default function CrearPagoModal({
       })),
   });
 
+  const [showSuscripcionModal, setShowSuscripcionModal] = useState(false);
+
+  /**
+   * Elegir una suscripción desde el buscador.
+   *
+   * El monto sugerido es el SALDO, no el precio del plan. Con el precio,
+   * cobrar el resto de una suscripción a medio pagar daba siempre 400: el
+   * servidor no permite saldo a favor (validarCobroSuscripcion), así que
+   * sugerir el precio completo sobre algo ya pagado en parte es proponer
+   * justo el número que va a rebotar.
+   */
+  const selectSuscripcion = (suscripcion: Suscripcion) => {
+    setSuscripcionSeleccionada(suscripcion);
+    const saldo = Number(
+      suscripcion.SaldoPendiente ?? suscripcion.PlanPrecio ?? 0,
+    );
+    setFormData((prev) => ({
+      ...prev,
+      SuscripcionId: String(suscripcion.SuscripcionId),
+      PagoMonto: saldo > 0 ? saldo : prev.PagoMonto,
+    }));
+    setShowSuscripcionModal(false);
+  };
+
   // Montos por método de pago (solo para creación, cuando no hay currentPago)
   const [contado, setContado] = useState(0);
   const [pos, setPos] = useState(0);
@@ -118,9 +173,14 @@ export default function CrearPagoModal({
       .then((data) => {
         const todasSuscripciones = data.data || [];
         let suscripcionesPendientes = todasSuscripciones.filter(
-          (s: Suscripcion) => s.EstadoPago !== "PAGADA",
+          (s: Suscripcion) => s.EstadoPago !== "PAGADA" && esCobrable(s),
         );
-        if (initialSuscripcion) {
+        // `initialSuscripcion` se inyecta al tope cuando no vino en el listado
+        // (caso típico: renovación, que llega con SuscripcionId vacío porque
+        // todavía no existe). Ese atajo saltea el filtro de arriba, así que
+        // también tiene que respetar la regla: si no, entrar por el botón de
+        // cobrar de una suscripción cancelada la metía igual en el combo.
+        if (initialSuscripcion && esCobrable(initialSuscripcion)) {
           const yaIncluida = suscripcionesPendientes.some(
             (s: Suscripcion) =>
               String(s.SuscripcionId) ===
@@ -136,7 +196,14 @@ export default function CrearPagoModal({
         setSuscripciones(suscripcionesPendientes);
       })
       .catch(() =>
-        setSuscripciones(initialSuscripcion ? [initialSuscripcion] : []),
+        // Mismo criterio en el fallback: si el listado no cargó, tampoco hay
+        // que ofrecer una suscripción sobre la que el servidor va a rechazar
+        // el cobro.
+        setSuscripciones(
+          initialSuscripcion && esCobrable(initialSuscripcion)
+            ? [initialSuscripcion]
+            : [],
+        ),
       );
     // clientes y planes los carga useClientesPlanes
   }, [show, initialSuscripcion]);
@@ -284,23 +351,10 @@ export default function CrearPagoModal({
       ...prev,
       [name]: name === "PagoMonto" ? Number(value) : value,
     }));
-    if (name === "SuscripcionId" && value) {
-      const suscripcion = suscripciones.find(
-        (s) => String(s.SuscripcionId) === String(value),
-      );
-      if (suscripcion) {
-        setSuscripcionSeleccionada(suscripcion);
-        if (suscripcion.PlanPrecio) {
-          setFormData((prev) => ({
-            ...prev,
-            SuscripcionId: value,
-            PagoMonto: Number(suscripcion.PlanPrecio),
-          }));
-        } else {
-          setFormData((prev) => ({ ...prev, SuscripcionId: value }));
-        }
-      }
-    }
+    // La rama que atendía `SuscripcionId` salió de acá: la suscripción ya no
+    // se elige con un <select> sino en SuscripcionModal, y quien la fija es
+    // `selectSuscripcion`. Mantenerla habría dejado dos lógicas de selección
+    // en paralelo, y la vieja sugería el precio del plan en vez del saldo.
   };
 
   const handleSuscripcionInputChange = (
@@ -765,34 +819,52 @@ export default function CrearPagoModal({
                     <label className="block mb-2 text-sm font-medium text-gray-900">
                       Suscripción *
                     </label>
-                    <select
-                      name="SuscripcionId"
-                      value={formData.SuscripcionId}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required={tipoPago === "existente"}
-                      disabled={!!currentPago}
-                    >
-                      <option value="">
-                        {currentPago
-                          ? "Suscripción del pago (no editable)"
-                          : "Seleccione una suscripción"}
-                      </option>
-                      {suscripciones.map((suscripcion) => (
-                        <option
-                          key={suscripcion.SuscripcionId}
-                          value={suscripcion.SuscripcionId}
-                        >
-                          ID: {suscripcion.SuscripcionId} -{" "}
-                          {suscripcion.ClienteNombre || ""}{" "}
-                          {suscripcion.ClienteApellido || ""} - Plan:{" "}
-                          {suscripcion.PlanNombre || "N/A"}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Mismo patrón que el selector de cliente de más arriba:
+                        un botón con cara de input que abre el buscador. Al
+                        editar un pago la suscripción no se cambia, así que ahí
+                        se muestra como texto plano y no como botón. */}
+                    {currentPago ? (
+                      <div className="w-full bg-gray-100 border border-gray-300 text-gray-500 text-sm rounded-lg block p-2.5">
+                        {suscripcionSeleccionada
+                          ? `${suscripcionSeleccionada.ClienteNombre || ""} ${
+                              suscripcionSeleccionada.ClienteApellido || ""
+                            } — ${suscripcionSeleccionada.PlanNombre || "N/A"}`
+                          : `Suscripción #${formData.SuscripcionId}`}{" "}
+                        (no editable)
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowSuscripcionModal(true)}
+                        className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 text-left hover:bg-gray-100 transition"
+                      >
+                        {suscripcionSeleccionada
+                          ? `${suscripcionSeleccionada.ClienteNombre || ""} ${
+                              suscripcionSeleccionada.ClienteApellido || ""
+                            } — ${
+                              suscripcionSeleccionada.PlanNombre || "N/A"
+                            } (vence ${formatDateLocal(
+                              String(
+                                suscripcionSeleccionada.SuscripcionFechaFin ||
+                                  "",
+                              ),
+                            )})`
+                          : "Buscar suscripción"}
+                      </button>
+                    )}
                     {!formData.SuscripcionId && tipoPago === "existente" && (
                       <p className="mt-1 text-xs text-red-600">
                         * Debe seleccionar una suscripción
+                      </p>
+                    )}
+                    {/* Sin esta aclaración, el operador que no encuentra a un
+                        socio en la lista no tiene forma de saber por qué
+                        falta y termina cargándole una suscripción nueva. */}
+                    {!currentPago && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Sólo se listan las suscripciones con saldo pendiente. No
+                        aparecen las canceladas ni las suspendidas: no se puede
+                        cobrar sobre ellas.
                       </p>
                     )}
                   </div>
@@ -1036,6 +1108,16 @@ export default function CrearPagoModal({
         onCreateCliente={createAndSelectCliente}
         currentUserId={user?.id}
         showFechaNacimiento={true}
+      />
+
+      {/* `suscripciones` ya viene filtrada (con saldo, cobrable): la regla de
+          qué se puede cobrar vive en el efecto de carga, no en el buscador. */}
+      <SuscripcionModal
+        show={showSuscripcionModal}
+        onClose={() => setShowSuscripcionModal(false)}
+        suscripciones={suscripciones}
+        onSelect={selectSuscripcion}
+        descripcion="Sólo las que tienen saldo pendiente. No se listan las canceladas ni las suspendidas: no se puede cobrar sobre ellas."
       />
     </>
   );
