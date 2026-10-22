@@ -552,34 +552,48 @@ exports.confirmar = async (req, res) => {
            FROM productoalmacen WHERE ProductoId = ? AND AlmacenId = ?`,
           [productoId, AlmacenOrigenId]
         );
-        if (!paRows.length) {
-          throw new Error(
-            `Producto ${productoId} no tiene stock en almacén ${AlmacenOrigenId}`
-          );
-        }
+        // Sin fila en el almacén (producto nunca comprado ahí): se parte de 0
+        // y el stock queda negativo, igual que en la tabla producto.
         const nPa = restarUnidades(
-          paRows[0].ProductoAlmacenStock,
-          paRows[0].ProductoAlmacenStockUnitario,
+          paRows.length ? paRows[0].ProductoAlmacenStock : 0,
+          paRows.length ? paRows[0].ProductoAlmacenStockUnitario : 0,
           cantidad,
           cantidadCaja
         );
-        await conn.query(
-          `UPDATE productoalmacen
-           SET ProductoAlmacenStock = ?, ProductoAlmacenStockUnitario = ?
-           WHERE ProductoId = ? AND AlmacenId = ?`,
-          [nPa.stock, nPa.stockUnitario, productoId, AlmacenOrigenId]
-        );
+        if (paRows.length) {
+          await conn.query(
+            `UPDATE productoalmacen
+             SET ProductoAlmacenStock = ?, ProductoAlmacenStockUnitario = ?
+             WHERE ProductoId = ? AND AlmacenId = ?`,
+            [nPa.stock, nPa.stockUnitario, productoId, AlmacenOrigenId]
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO productoalmacen
+               (ProductoId, AlmacenId, ProductoAlmacenStock, ProductoAlmacenStockUnitario)
+             VALUES (?, ?, ?, ?)`,
+            [productoId, AlmacenOrigenId, nPa.stock, nPa.stockUnitario]
+          );
+        }
       } else {
         await conn.query(
           `UPDATE producto SET ProductoStock = ProductoStock - ? WHERE ProductoId = ?`,
           [cantidad, productoId]
         );
-        await conn.query(
+        const [paUpd] = await conn.query(
           `UPDATE productoalmacen
            SET ProductoAlmacenStock = ProductoAlmacenStock - ?
            WHERE ProductoId = ? AND AlmacenId = ?`,
           [cantidad, productoId, AlmacenOrigenId]
         );
+        if (paUpd.affectedRows === 0) {
+          await conn.query(
+            `INSERT INTO productoalmacen
+               (ProductoId, AlmacenId, ProductoAlmacenStock, ProductoAlmacenStockUnitario)
+             VALUES (?, ?, ?, 0)`,
+            [productoId, AlmacenOrigenId, -cantidad]
+          );
+        }
       }
 
       i += 1;
