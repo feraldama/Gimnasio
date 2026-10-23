@@ -17,10 +17,12 @@ import {
   type RegistroDiarioCajaRow,
 } from "../../services/registros.service";
 import {
+  controlEfectivo,
   desglosarIngresos,
   desgloseVacio,
   sumarDesgloses,
   ORIGENES,
+  type ControlEfectivo,
   type DesgloseIngresos,
 } from "../../utils/cajaOrigen";
 import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
@@ -135,6 +137,7 @@ interface ResumenCierre {
   totalIngresos: number;
   diferencia: number;
   sobranteFaltante: number;
+  control: ControlEfectivo;
   parcial?: boolean;
 }
 
@@ -213,8 +216,12 @@ function calcularTotalesCiclo(
     ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
   const diferencia = totalIngresos - egresos;
   const sobranteFaltante = ingresos + apertura - (cierre + egresos);
+  // Movimientos que componen el efectivo esperado, por origen, para poder
+  // buscar dónde está el sobrante/faltante.
+  const control = controlEfectivo(filtrados, apertura, cierre);
 
   return {
+    control,
     apertura,
     cierre,
     egresos,
@@ -288,6 +295,65 @@ function buildResumenesCierre(
   return resumenes;
 }
 
+// Detalle del control de efectivo de un cierre: qué movimientos componen el
+// efectivo esperado, agrupados por origen, para buscar dónde está la diferencia.
+function DetalleEfectivo({ control }: { control: ControlEfectivo }) {
+  const grupos = [
+    ...ORIGENES.filter(
+      (o) => o.key !== "otros" || control.porOrigen.otros.movimientos.length > 0,
+    ).map((o) => ({
+      titulo: `+ Efectivo ${o.label}`,
+      ...control.porOrigen[o.key],
+    })),
+    { titulo: "− Egresos", ...control.egresos },
+  ];
+  const fila = "flex justify-between gap-4";
+  return (
+    <div className="max-w-xl text-xs">
+      <div className={`${fila} text-slate-600 mb-2`}>
+        <span>Apertura</span>
+        <span className="font-mono">{formatMiles(control.apertura)}</span>
+      </div>
+      {grupos.map((g) => (
+        <div key={g.titulo} className="mb-2">
+          <div className={`${fila} font-semibold text-slate-800`}>
+            <span>{g.titulo}</span>
+            <span className="font-mono">{formatMiles(g.total)}</span>
+          </div>
+          {g.movimientos.length === 0 ? (
+            <p className="pl-4 text-slate-400">Sin movimientos</p>
+          ) : (
+            g.movimientos.map((m) => (
+              <div key={m.id} className={`${fila} pl-4 text-slate-600`}>
+                <span>
+                  <span className="text-slate-400">#{m.id}</span> {m.detalle}
+                </span>
+                <span className="font-mono">{formatMiles(m.monto)}</span>
+              </div>
+            ))
+          )}
+        </div>
+      ))}
+      <div className={`${fila} border-t border-slate-300 pt-1 font-semibold text-slate-800`}>
+        <span>Efectivo esperado</span>
+        <span className="font-mono">{formatMiles(control.esperado)}</span>
+      </div>
+      <div className={`${fila} text-slate-600`}>
+        <span>Cierre declarado</span>
+        <span className="font-mono">{formatMiles(control.declarado)}</span>
+      </div>
+      <div
+        className={`${fila} font-semibold ${control.diferencia > 0 ? "text-red-700" : control.diferencia < 0 ? "text-amber-700" : "text-slate-800"}`}
+      >
+        <span>
+          {control.diferencia > 0 ? "Faltante" : control.diferencia < 0 ? "Sobrante" : "Sin diferencia"}
+        </span>
+        <span className="font-mono">{formatMiles(Math.abs(control.diferencia))}</span>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
@@ -310,6 +376,8 @@ const ReportesPage: React.FC = () => {
   const [paginaCierre, setPaginaCierre] = useState(1);
   const [fechaDesdeCierre, setFechaDesdeCierre] = useState(() => getHoyISO());
   const [fechaHastaCierre, setFechaHastaCierre] = useState(() => getHoyISO());
+  // Cierre desplegado en la tabla (muestra sus movimientos en efectivo).
+  const [cierreAbierto, setCierreAbierto] = useState<string | null>(null);
 
   // Estado del reporte "Productos vendidos y comprados"
   const [fechaDesdeMov, setFechaDesdeMov] = useState(() => {
@@ -382,6 +450,12 @@ const ReportesPage: React.FC = () => {
     return resumenesCierre.slice(from, from + PAGE_SIZE);
   }, [resumenesCierre, paginaCierre]);
 
+  // "Otros" (cancha, etc.) sólo se muestra si algún cierre del período lo tuvo.
+  const hayOtrosCierre = useMemo(
+    () => resumenesCierre.some((r) => r.control.porOrigen.otros.total > 0),
+    [resumenesCierre],
+  );
+
   const totalesGeneralesCierre = useMemo(() => {
     return resumenesCierre.reduce(
       (acc, r) => ({
@@ -389,6 +463,9 @@ const ReportesPage: React.FC = () => {
         cierre: acc.cierre + r.cierre,
         egresos: acc.egresos + r.egresos,
         ingresos: acc.ingresos + r.ingresos,
+        efectivoGimnasio: acc.efectivoGimnasio + r.control.porOrigen.gimnasio.total,
+        efectivoProductos: acc.efectivoProductos + r.control.porOrigen.productos.total,
+        efectivoOtros: acc.efectivoOtros + r.control.porOrigen.otros.total,
         ingresosPOS: acc.ingresosPOS + r.ingresosPOS,
         ingresosVoucher: acc.ingresosVoucher + r.ingresosVoucher,
         ingresosTransfer: acc.ingresosTransfer + r.ingresosTransfer,
@@ -400,6 +477,9 @@ const ReportesPage: React.FC = () => {
         cierre: 0,
         egresos: 0,
         ingresos: 0,
+        efectivoGimnasio: 0,
+        efectivoProductos: 0,
+        efectivoOtros: 0,
         ingresosPOS: 0,
         ingresosVoucher: 0,
         ingresosTransfer: 0,
@@ -1263,6 +1343,7 @@ const ReportesPage: React.FC = () => {
     setError(null);
     setResumenesCierre([]);
     setPaginaCierre(1);
+    setCierreAbierto(null);
     try {
       const { data } = await getRegistrosDiariosCajaPorRango(
         fechaDesdeCierre,
@@ -1753,12 +1834,15 @@ const ReportesPage: React.FC = () => {
       formatMiles(r.apertura),
       formatMiles(r.cierre),
       formatMiles(r.egresos),
-      formatMiles(r.ingresos),
+      formatMiles(r.control.porOrigen.gimnasio.total),
+      formatMiles(r.control.porOrigen.productos.total),
+      ...(hayOtrosCierre ? [formatMiles(r.control.porOrigen.otros.total)] : []),
       formatMiles(r.ingresosPOS),
       formatMiles(r.ingresosVoucher),
       formatMiles(r.ingresosTransfer),
       formatMiles(r.totalIngresos),
       formatMiles(r.diferencia),
+      formatMiles(r.control.esperado),
       formatMiles(r.sobranteFaltante),
     ]);
     autoTable(doc, {
@@ -1770,12 +1854,15 @@ const ReportesPage: React.FC = () => {
           "Apertura",
           "Cierre",
           "Egresos",
-          "Ing.Efect.",
+          "Efect.Gim.",
+          "Efect.Prod.",
+          ...(hayOtrosCierre ? ["Efect.Otros"] : []),
           "POS",
           "Voucher",
           "Transfer",
           "Total ing.",
           "Diferencia",
+          "Esperado",
           "S/F",
         ],
       ],
@@ -1816,6 +1903,79 @@ const ReportesPage: React.FC = () => {
       14,
       y,
     );
+    y += 6;
+    doc.text(
+      `Efectivo Gimnasio: ${formatMiles(
+        totalesGeneralesCierre.efectivoGimnasio,
+      )} | Efectivo Productos: ${formatMiles(totalesGeneralesCierre.efectivoProductos)}${
+        hayOtrosCierre
+          ? ` | Efectivo Otros: ${formatMiles(totalesGeneralesCierre.efectivoOtros)}`
+          : ""
+      }`,
+      14,
+      y,
+    );
+
+    // Detalle de efectivo de los cierres con sobrante/faltante, para poder
+    // buscar en qué movimiento está la diferencia.
+    const conDiferencia = resumenesCierre.filter((r) => r.sobranteFaltante !== 0);
+    if (conDiferencia.length > 0) {
+      doc.addPage();
+      doc.setFontSize(13);
+      doc.text("Detalle de efectivo de los cierres con diferencia", 14, 14);
+      let yDet = 20;
+      for (const r of conDiferencia) {
+        const c = r.control;
+        const body: (string | { content: string; styles: object })[][] = [
+          ["", "Apertura", formatMiles(c.apertura)],
+        ];
+        const grupo = (titulo: string, g: { total: number; movimientos: { id: number; detalle: string; monto: number }[] }) => {
+          body.push([
+            { content: "", styles: {} },
+            { content: titulo, styles: { fontStyle: "bold" } },
+            { content: formatMiles(g.total), styles: { fontStyle: "bold" } },
+          ]);
+          for (const m of g.movimientos) {
+            body.push([`#${m.id}`, `   ${m.detalle}`, formatMiles(m.monto)]);
+          }
+        };
+        for (const o of ORIGENES) {
+          if (o.key === "otros" && c.porOrigen.otros.movimientos.length === 0) continue;
+          grupo(`+ Efectivo ${o.label}`, c.porOrigen[o.key]);
+        }
+        grupo("- Egresos", c.egresos);
+        const sf = c.diferencia > 0 ? "Faltante" : "Sobrante";
+        body.push(
+          ["", { content: "Efectivo esperado", styles: { fontStyle: "bold" } }, { content: formatMiles(c.esperado), styles: { fontStyle: "bold" } }],
+          ["", "Cierre declarado", formatMiles(c.declarado)],
+          [
+            "",
+            { content: sf, styles: { fontStyle: "bold", textColor: c.diferencia > 0 ? [185, 28, 28] : [180, 83, 9] } },
+            { content: formatMiles(Math.abs(c.diferencia)), styles: { fontStyle: "bold", textColor: c.diferencia > 0 ? [185, 28, 28] : [180, 83, 9] } },
+          ],
+        );
+        autoTable(doc, {
+          head: [[{ content: `${r.fechaCierre} - ${r.cajaDescripcion} - ${r.usuarioId}`, colSpan: 3 }]],
+          body,
+          startY: yDet,
+          // Cada cierre entero en una página (si no entra, pasa a la siguiente).
+          pageBreak: "avoid",
+          theme: "plain",
+          headStyles: { fillColor: [241, 245, 249], textColor: 20, fontSize: 9 },
+          styles: { fontSize: 8, cellPadding: 1 },
+          margin: { left: 14 },
+          tableWidth: 150,
+          columnStyles: {
+            0: { cellWidth: 14, textColor: [148, 163, 184] },
+            1: { cellWidth: 106 },
+            2: { cellWidth: 30, halign: "right" },
+          },
+        });
+        yDet =
+          (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+            .finalY + 8;
+      }
+    }
 
     const pdfBlob = doc.output("blob");
     const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -2062,7 +2222,7 @@ const ReportesPage: React.FC = () => {
                 {paginaCierre} de {totalPaginasCierre}.
               </p>
               <div className="overflow-x-auto -mx-2 mb-4">
-                <table className="w-full border-collapse text-sm min-w-[900px]">
+                <table className="w-full border-collapse text-sm min-w-[1100px]">
                   <thead className="sticky top-0 bg-slate-100 z-10">
                     <tr className="border-b border-slate-300">
                       <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
@@ -2084,8 +2244,16 @@ const ReportesPage: React.FC = () => {
                         Egresos
                       </th>
                       <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
-                        Ing. Efectivo
+                        Efect. Gimnasio
                       </th>
+                      <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                        Efect. Productos
+                      </th>
+                      {hayOtrosCierre && (
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Efect. Otros
+                        </th>
+                      )}
                       <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
                         POS
                       </th>
@@ -2102,61 +2270,96 @@ const ReportesPage: React.FC = () => {
                         Diferencia
                       </th>
                       <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                        Efect. esperado
+                      </th>
+                      <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
                         Sobrante/Faltante
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {resumenesPaginados.map((r, idx) => (
-                      <tr
-                        key={`${r.fechaCierre}-${r.cajaId}-${r.usuarioId}-${idx}`}
-                        className="border-b border-slate-200 hover:bg-slate-50"
-                      >
-                        <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
-                          {r.fechaCierre}
-                        </td>
-                        <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
-                          {r.cajaDescripcion}
-                        </td>
-                        <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
-                          {r.usuarioId}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.apertura)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.cierre)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.egresos)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.ingresos)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.ingresosPOS)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.ingresosVoucher)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.ingresosTransfer)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.totalIngresos)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {formatMiles(r.diferencia)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-700">
-                          {r.sobranteFaltante > 0
-                            ? `Falt. ${formatMiles(r.sobranteFaltante)}`
-                            : r.sobranteFaltante < 0
-                              ? `Sobr. ${formatMiles(-r.sobranteFaltante)}`
-                              : "0"}
-                        </td>
-                      </tr>
-                    ))}
+                    {resumenesPaginados.map((r, idx) => {
+                      const key = `${r.fechaCierre}-${r.cajaId}-${r.usuarioId}-${idx}`;
+                      const abierto = cierreAbierto === key;
+                      const colorSF =
+                        r.sobranteFaltante > 0
+                          ? "text-red-700 font-semibold"
+                          : r.sobranteFaltante < 0
+                            ? "text-amber-700 font-semibold"
+                            : "text-slate-700";
+                      return (
+                        <React.Fragment key={key}>
+                          <tr
+                            className={`border-b border-slate-200 cursor-pointer ${abierto ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                            onClick={() => setCierreAbierto(abierto ? null : key)}
+                            title="Ver los movimientos en efectivo de este cierre"
+                          >
+                            <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                              <span className="inline-block w-3 text-slate-400">{abierto ? "▾" : "▸"}</span>{" "}
+                              {r.fechaCierre}
+                            </td>
+                            <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                              {r.cajaDescripcion}
+                            </td>
+                            <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                              {r.usuarioId}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.apertura)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.cierre)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.egresos)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.control.porOrigen.gimnasio.total)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.control.porOrigen.productos.total)}
+                            </td>
+                            {hayOtrosCierre && (
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {formatMiles(r.control.porOrigen.otros.total)}
+                              </td>
+                            )}
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.ingresosPOS)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.ingresosVoucher)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.ingresosTransfer)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.totalIngresos)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.diferencia)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                              {formatMiles(r.control.esperado)}
+                            </td>
+                            <td className={`py-1.5 px-2 text-right font-mono ${colorSF}`}>
+                              {r.sobranteFaltante > 0
+                                ? `Falt. ${formatMiles(r.sobranteFaltante)}`
+                                : r.sobranteFaltante < 0
+                                  ? `Sobr. ${formatMiles(-r.sobranteFaltante)}`
+                                  : "0"}
+                            </td>
+                          </tr>
+                          {abierto && (
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <td colSpan={hayOtrosCierre ? 16 : 15} className="px-6 py-3">
+                                <DetalleEfectivo control={r.control} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2197,6 +2400,26 @@ const ReportesPage: React.FC = () => {
                       {formatMiles(totalesGeneralesCierre.ingresos)}
                     </span>
                   </div>
+                  <div>
+                    <span className="text-slate-500">Efect. Gimnasio:</span>{" "}
+                    <span className="font-mono font-medium">
+                      {formatMiles(totalesGeneralesCierre.efectivoGimnasio)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Efect. Productos:</span>{" "}
+                    <span className="font-mono font-medium">
+                      {formatMiles(totalesGeneralesCierre.efectivoProductos)}
+                    </span>
+                  </div>
+                  {hayOtrosCierre && (
+                    <div>
+                      <span className="text-slate-500">Efect. Otros:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {formatMiles(totalesGeneralesCierre.efectivoOtros)}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-slate-500">POS:</span>{" "}
                     <span className="font-mono font-medium">

@@ -77,6 +77,87 @@ export function desglosarIngresos(registros: RegistroCaja[]): DesgloseIngresos {
   return res;
 }
 
+// ===== Control de efectivo =====
+// Desarma el sobrante/faltante del turno en los movimientos que lo componen
+// para que se pueda buscar dónde está la diferencia. El cajero declara un solo
+// monto de cierre, así que la diferencia no se puede atribuir a un origen: lo
+// que sí se puede es mostrar cuánto efectivo debía entrar por cada origen y
+// con qué movimientos.
+//
+// Misma regla que el cálculo de siempre del ticket:
+//   esperado = apertura + ingresos en efectivo − egresos
+//   diferencia = esperado − cierre   (> 0 faltante, < 0 sobrante)
+
+export interface MovimientoEfectivo {
+  id: number;
+  fecha: string;
+  detalle: string;
+  monto: number;
+}
+
+export interface ControlEfectivo {
+  apertura: number;
+  porOrigen: Record<OrigenIngreso, { total: number; movimientos: MovimientoEfectivo[] }>;
+  egresos: { total: number; movimientos: MovimientoEfectivo[] };
+  esperado: number;
+  declarado: number;
+  diferencia: number;
+}
+
+interface RegistroCajaDetallado extends RegistroCaja {
+  RegistroDiarioCajaId: number;
+  RegistroDiarioCajaFecha: string;
+}
+
+// `registros` son los movimientos del turno SIN la apertura ni el cierre (o con
+// ellos: se ignoran los del grupo 2).
+export function controlEfectivo(
+  registros: RegistroCajaDetallado[],
+  apertura: number,
+  declarado: number,
+): ControlEfectivo {
+  const porOrigen = {
+    gimnasio: { total: 0, movimientos: [] as MovimientoEfectivo[] },
+    productos: { total: 0, movimientos: [] as MovimientoEfectivo[] },
+    otros: { total: 0, movimientos: [] as MovimientoEfectivo[] },
+  };
+  const egresos = { total: 0, movimientos: [] as MovimientoEfectivo[] };
+  const ordenados = [...registros].sort(
+    (a, b) => a.RegistroDiarioCajaId - b.RegistroDiarioCajaId,
+  );
+  for (const r of ordenados) {
+    if (r.TipoGastoGrupoId === 2) continue; // apertura / cierre
+    const mov: MovimientoEfectivo = {
+      id: r.RegistroDiarioCajaId,
+      fecha: r.RegistroDiarioCajaFecha,
+      detalle: r.RegistroDiarioCajaDetalle || "",
+      monto: Number(r.RegistroDiarioCajaMonto) || 0,
+    };
+    if (r.TipoGastoId === 1) {
+      egresos.total += mov.monto;
+      egresos.movimientos.push(mov);
+    } else if (r.TipoGastoId === 2 && medioDeGrupo(r.TipoGastoGrupoId) === "efectivo") {
+      const o = porOrigen[origenDeDetalle(r.RegistroDiarioCajaDetalle)];
+      o.total += mov.monto;
+      o.movimientos.push(mov);
+    }
+  }
+  const esperado =
+    apertura +
+    porOrigen.gimnasio.total +
+    porOrigen.productos.total +
+    porOrigen.otros.total -
+    egresos.total;
+  return {
+    apertura,
+    porOrigen,
+    egresos,
+    esperado,
+    declarado,
+    diferencia: esperado - declarado,
+  };
+}
+
 export function sumarDesgloses(a: DesgloseIngresos, b: DesgloseIngresos): DesgloseIngresos {
   const res = desgloseVacio();
   for (const { key } of ORIGENES) {

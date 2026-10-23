@@ -14,9 +14,11 @@ import { formatMiles, todayLocalISO, formatDateLocal } from "../../utils/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { loadPdf } from "../../utils/lazyPdf";
 import {
+  controlEfectivo,
   desglosarIngresos,
   ORIGENES,
   type IngresosPorMedio,
+  type MovimientoEfectivo,
 } from "../../utils/cajaOrigen";
 
 import type { Caja } from "../../types";
@@ -225,7 +227,10 @@ export default function AperturaCierreCajaPage() {
     const ingresosPOS = totalMedio("pos");
     const ingresosVoucher = totalMedio("voucher");
     const ingresosTransfer = totalMedio("transfer");
-    const sobranteFaltante = ingresos + apertura - (cierre + egresos);
+    // Control de efectivo: qué movimientos componen el efectivo esperado, para
+    // poder buscar dónde está el sobrante/faltante.
+    const control = controlEfectivo(registrosFiltrados, apertura, cierre);
+    const sobranteFaltante = control.diferencia;
     let txtSobranteFaltante = "";
     if (sobranteFaltante > 0) {
       txtSobranteFaltante = `Faltante de: Gs. ${formatMiles(sobranteFaltante)}`;
@@ -244,78 +249,138 @@ export default function AperturaCierreCajaPage() {
       ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
     const diferencia = totalIngresos - egresos;
 
-    // Sin bloques de origen el ticket mide 200 mm (el formato de siempre); cada
-    // bloque agrega 46 mm (título + 4 medios + subtotal + separador).
-    const alto = 200 + origenesTicket.length * 46;
     // --- Generar PDF ---
     const { jsPDF } = await loadPdf();
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: [80, alto], // 80mm de ancho
-    });
-    doc.setFontSize(16);
-    doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
-    doc.setFontSize(11);
-    doc.text(`Fecha: ${fecha} - Hora: ${hora}`, 10, 30);
-    doc.text(`Usuario: ${user.nombre}`, 10, 38);
-    doc.text(`Caja: ${cajaDescripcion}`, 10, 46);
-    doc.line(10, 50, 200, 50);
-    let y = 58;
-    doc.text(`Apertura: ${formatMiles(apertura)}`, 10, y);
-    y += 8;
-    doc.text(`Cierre: ${formatMiles(cierre)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    for (const o of origenesTicket) {
-      const d = desglose[o.key];
+    type Doc = InstanceType<typeof jsPDF>;
+    // Recorta el detalle de un movimiento para que no pise el monto.
+    const ajustar = (d: Doc, texto: string, ancho: number) => {
+      if (d.getTextWidth(texto) <= ancho) return texto;
+      let t = texto;
+      while (t.length > 1 && d.getTextWidth(t + "…") > ancho) t = t.slice(0, -1);
+      return t + "…";
+    };
+    // Dibuja el ticket y devuelve dónde terminó. Se llama dos veces: una para
+    // medir el alto (depende de cuántos movimientos tuvo el turno) y otra en
+    // la hoja definitiva.
+    const dibujar = (doc: Doc) => {
+      doc.setFontSize(16);
+      doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
+      doc.setFontSize(11);
+      doc.text(`Fecha: ${fecha} - Hora: ${hora}`, 10, 30);
+      doc.text(`Usuario: ${user.nombre}`, 10, 38);
+      doc.text(`Caja: ${cajaDescripcion}`, 10, 46);
+      doc.line(10, 50, 200, 50);
+      let y = 58;
+      doc.text(`Apertura: ${formatMiles(apertura)}`, 10, y);
+      y += 8;
+      doc.text(`Cierre: ${formatMiles(cierre)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      for (const o of origenesTicket) {
+        const d = desglose[o.key];
+        doc.setFont("helvetica", "bold");
+        doc.text(`INGRESOS ${o.label.toUpperCase()}`, 10, y);
+        doc.setFont("helvetica", "normal");
+        y += 7;
+        doc.setFontSize(10);
+        doc.text(`Efectivo: ${formatMiles(d.efectivo)}`, 13, y);
+        y += 6;
+        doc.text(`POS: ${formatMiles(d.pos)}`, 13, y);
+        y += 6;
+        doc.text(`Voucher: ${formatMiles(d.voucher)}`, 13, y);
+        y += 6;
+        doc.text(`Transfer: ${formatMiles(d.transfer)}`, 13, y);
+        y += 7;
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text(`Subtotal ${o.label}: ${formatMiles(d.total)}`, 10, y);
+        doc.setFont("helvetica", "normal");
+        y += 6;
+        doc.line(10, y, 200, y);
+        y += 8;
+      }
+      doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos Voucher: ${formatMiles(ingresosVoucher)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
+      y += 8;
+      doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
+      y += 8;
+      doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+
+      // --- Control de efectivo ---
+      const linea = (texto: string, monto: string, negrita = false) => {
+        doc.setFont("helvetica", negrita ? "bold" : "normal");
+        doc.text(texto, 10, y);
+        doc.text(monto, 70, y, { align: "right" });
+        doc.setFont("helvetica", "normal");
+      };
+      const movimientos = (lista: MovimientoEfectivo[]) => {
+        doc.setFontSize(8);
+        for (const m of lista) {
+          const monto = formatMiles(m.monto);
+          const ancho = 70 - 13 - doc.getTextWidth(monto) - 2;
+          doc.text(ajustar(doc, m.detalle, ancho), 13, y);
+          doc.text(monto, 70, y, { align: "right" });
+          y += 4.5;
+        }
+        doc.setFontSize(10);
+      };
       doc.setFont("helvetica", "bold");
-      doc.text(`INGRESOS ${o.label.toUpperCase()}`, 10, y);
+      doc.text("CONTROL DE EFECTIVO", 10, y);
       doc.setFont("helvetica", "normal");
       y += 7;
       doc.setFontSize(10);
-      doc.text(`Efectivo: ${formatMiles(d.efectivo)}`, 13, y);
+      linea("Apertura", formatMiles(control.apertura));
       y += 6;
-      doc.text(`POS: ${formatMiles(d.pos)}`, 13, y);
+      for (const o of ORIGENES) {
+        const g = control.porOrigen[o.key];
+        if (o.key === "otros" && g.movimientos.length === 0) continue;
+        linea(`+ Efectivo ${o.label}`, formatMiles(g.total), true);
+        y += 5;
+        movimientos(g.movimientos);
+        y += 1.5;
+      }
+      linea("- Egresos", formatMiles(control.egresos.total), true);
+      y += 5;
+      movimientos(control.egresos.movimientos);
+      y += 1.5;
+      doc.line(10, y - 3, 70, y - 3);
+      y += 2;
+      linea("Efectivo esperado", formatMiles(control.esperado), true);
       y += 6;
-      doc.text(`Voucher: ${formatMiles(d.voucher)}`, 13, y);
-      y += 6;
-      doc.text(`Transfer: ${formatMiles(d.transfer)}`, 13, y);
-      y += 7;
+      linea("Cierre declarado", formatMiles(control.declarado));
+      y += 8;
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text(`Subtotal ${o.label}: ${formatMiles(d.total)}`, 10, y);
+      doc.text(txtSobranteFaltante, 10, y);
       doc.setFont("helvetica", "normal");
-      y += 6;
-      doc.line(10, y, 200, y);
-      y += 8;
-    }
-    doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos Voucher: ${formatMiles(ingresosVoucher)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
-    y += 8;
-    doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
-    y += 8;
-    doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(txtSobranteFaltante, 10, y);
-    y += 12;
-    doc.text("--GRACIAS POR SU PREFERENCIA--", 10, y);
+      y += 12;
+      doc.text("--GRACIAS POR SU PREFERENCIA--", 10, y);
+      return y;
+    };
+    const altoMedido = dibujar(new jsPDF({ unit: "mm", format: [80, 2000] }));
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [80, Math.max(200, altoMedido + 15)], // 80mm de ancho
+    });
+    dibujar(doc);
 
     // Generar el PDF y abrirlo automáticamente
     const pdfBlob = doc.output("blob");
