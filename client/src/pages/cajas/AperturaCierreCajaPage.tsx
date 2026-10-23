@@ -13,6 +13,11 @@ import Swal from "sweetalert2";
 import { formatMiles, todayLocalISO, formatDateLocal } from "../../utils/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { loadPdf } from "../../utils/lazyPdf";
+import {
+  desglosarIngresos,
+  ORIGENES,
+  type IngresosPorMedio,
+} from "../../utils/cajaOrigen";
 
 import type { Caja } from "../../types";
 
@@ -24,6 +29,7 @@ interface RegistroDiarioCaja {
   RegistroDiarioCajaMonto: number;
   TipoGastoId: number;
   TipoGastoGrupoId: number;
+  RegistroDiarioCajaDetalle?: string;
 }
 
 export default function AperturaCierreCajaPage() {
@@ -206,33 +212,19 @@ export default function AperturaCierreCajaPage() {
     const apertura = aperturaReg.RegistroDiarioCajaMonto;
     const cierre = cierreReg.RegistroDiarioCajaMonto;
     let egresos = 0;
-    let ingresos = 0;
-    let ingresosPOS = 0;
-    let ingresosVoucher = 0;
-    let ingresosTransfer = 0;
     for (const reg of registrosFiltrados) {
-      if (
-        reg.TipoGastoId === 2 &&
-        reg.TipoGastoGrupoId !== 2 &&
-        reg.TipoGastoGrupoId !== 4 &&
-        reg.TipoGastoGrupoId !== 5 &&
-        reg.TipoGastoGrupoId !== 6
-      ) {
-        ingresos += reg.RegistroDiarioCajaMonto;
-      }
       if (reg.TipoGastoId === 1 && reg.TipoGastoGrupoId !== 2) {
         egresos += reg.RegistroDiarioCajaMonto;
       }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 4) {
-        ingresosPOS += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 5) {
-        ingresosVoucher += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 6) {
-        ingresosTransfer += reg.RegistroDiarioCajaMonto;
-      }
     }
+    // Ingresos por origen (gimnasio / productos / otros) y por medio de pago.
+    const desglose = desglosarIngresos(registrosFiltrados);
+    const totalMedio = (campo: keyof IngresosPorMedio) =>
+      ORIGENES.reduce((acc, o) => acc + desglose[o.key][campo], 0);
+    const ingresos = totalMedio("efectivo");
+    const ingresosPOS = totalMedio("pos");
+    const ingresosVoucher = totalMedio("voucher");
+    const ingresosTransfer = totalMedio("transfer");
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
     let txtSobranteFaltante = "";
     if (sobranteFaltante > 0) {
@@ -244,12 +236,23 @@ export default function AperturaCierreCajaPage() {
     } else {
       txtSobranteFaltante = `Sobrante/Faltante: Gs. 0`;
     }
+    // "Otros" (cancha, etc.) sólo aparece si tuvo movimientos en el turno.
+    const origenesTicket = ORIGENES.filter(
+      (o) => o.key !== "otros" || desglose.otros.total > 0
+    );
+    const totalIngresos =
+      ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
+    const diferencia = totalIngresos - egresos;
+
+    // Sin bloques de origen el ticket mide 200 mm (el formato de siempre); cada
+    // bloque agrega 46 mm (título + 4 medios + subtotal + separador).
+    const alto = 200 + origenesTicket.length * 46;
     // --- Generar PDF ---
     const { jsPDF } = await loadPdf();
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 200], // 80mm de ancho, 200mm de alto
+      format: [80, alto], // 80mm de ancho
     });
     doc.setFontSize(16);
     doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
@@ -269,6 +272,29 @@ export default function AperturaCierreCajaPage() {
     y += 8;
     doc.line(10, y, 200, y);
     y += 8;
+    for (const o of origenesTicket) {
+      const d = desglose[o.key];
+      doc.setFont("helvetica", "bold");
+      doc.text(`INGRESOS ${o.label.toUpperCase()}`, 10, y);
+      doc.setFont("helvetica", "normal");
+      y += 7;
+      doc.setFontSize(10);
+      doc.text(`Efectivo: ${formatMiles(d.efectivo)}`, 13, y);
+      y += 6;
+      doc.text(`POS: ${formatMiles(d.pos)}`, 13, y);
+      y += 6;
+      doc.text(`Voucher: ${formatMiles(d.voucher)}`, 13, y);
+      y += 6;
+      doc.text(`Transfer: ${formatMiles(d.transfer)}`, 13, y);
+      y += 7;
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Subtotal ${o.label}: ${formatMiles(d.total)}`, 10, y);
+      doc.setFont("helvetica", "normal");
+      y += 6;
+      doc.line(10, y, 200, y);
+      y += 8;
+    }
     doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
     y += 8;
     doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
@@ -279,15 +305,10 @@ export default function AperturaCierreCajaPage() {
     y += 8;
     doc.line(10, y, 200, y);
     y += 8;
-    const totalIngresos =
-      ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
     doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
     y += 8;
-    // Línea nueva para Total Egresos
     doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
     y += 8;
-    // Línea nueva para Diferencia
-    const diferencia = totalIngresos - egresos;
     doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
     y += 8;
     doc.line(10, y, 200, y);

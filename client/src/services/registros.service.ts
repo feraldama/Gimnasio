@@ -112,6 +112,7 @@ export interface RegistroDiarioCajaRow {
   RegistroDiarioCajaMonto: number;
   TipoGastoId: number;
   TipoGastoGrupoId: number;
+  RegistroDiarioCajaDetalle?: string;
   CajaDescripcion?: string;
 }
 

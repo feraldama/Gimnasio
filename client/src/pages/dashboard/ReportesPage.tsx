@@ -16,6 +16,13 @@ import {
   getRegistrosDiariosCajaPorRango,
   type RegistroDiarioCajaRow,
 } from "../../services/registros.service";
+import {
+  desglosarIngresos,
+  desgloseVacio,
+  sumarDesgloses,
+  ORIGENES,
+  type DesgloseIngresos,
+} from "../../utils/cajaOrigen";
 import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
 import { getReporteCobranza } from "../../services/pagos.service";
 import {
@@ -356,6 +363,15 @@ const ReportesPage: React.FC = () => {
   });
   const [fechaHastaRank, setFechaHastaRank] = useState(() => getHoyISO());
   const [limitRank, setLimitRank] = useState(20);
+
+  // Ingresos por origen (Gimnasio / Productos)
+  const [fechaDesdeOrigen, setFechaDesdeOrigen] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaOrigen, setFechaHastaOrigen] = useState(() => getHoyISO());
+  const [agruparOrigenPor, setAgruparOrigenPor] = useState<"dia" | "semana" | "mes">("dia");
 
   const totalPaginasCierre = Math.max(
     1,
@@ -1571,6 +1587,155 @@ const ReportesPage: React.FC = () => {
     }
   };
 
+  const handleGenerarReporteOrigen = async () => {
+    if (!fechaDesdeOrigen || !fechaHastaOrigen) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeOrigen) > new Date(fechaHastaOrigen)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await getRegistrosDiariosCajaPorRango(
+        fechaDesdeOrigen,
+        fechaHastaOrigen,
+      );
+      // El endpoint trae un día de margen a cada lado: se recorta por fecha local.
+      const lista = (Array.isArray(data) ? data : []).filter((r) => {
+        const f = toLocalDateStr(r.RegistroDiarioCajaFecha);
+        return f >= fechaDesdeOrigen && f <= fechaHastaOrigen;
+      });
+
+      // Clave ordenable + etiqueta del período (semana = lunes que la inicia).
+      const periodoDe = (fechaISO: string): { key: string; label: string } => {
+        const d = new Date(fechaISO);
+        if (agruparOrigenPor === "mes") {
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          return { key: `${d.getFullYear()}-${m}`, label: `${m}/${d.getFullYear()}` };
+        }
+        if (agruparOrigenPor === "semana") {
+          const lunes = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
+          return {
+            key: toLocalDateStr(lunes.toISOString()),
+            label: `Sem. ${formatDateDDMMYYYY(lunes)}`,
+          };
+        }
+        return { key: toLocalDateStr(fechaISO), label: formatDateDDMMYYYY(d) };
+      };
+
+      const porPeriodo = new Map<string, { label: string; regs: typeof lista }>();
+      for (const r of lista) {
+        const { key, label } = periodoDe(r.RegistroDiarioCajaFecha);
+        const g = porPeriodo.get(key) ?? { label, regs: [] };
+        g.regs.push(r);
+        porPeriodo.set(key, g);
+      }
+      const filas = [...porPeriodo.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([, g]) => ({ label: g.label, d: desglosarIngresos(g.regs) }))
+        .filter((f) => ORIGENES.some((o) => f.d[o.key].total > 0));
+      const totales: DesgloseIngresos = filas.reduce(
+        (acc, f) => sumarDesgloses(acc, f.d),
+        desgloseVacio(),
+      );
+      // "Otros" (cancha, etc.) sólo se muestra si hubo movimientos.
+      const conOtros = totales.otros.total > 0;
+      const totalFila = (d: DesgloseIngresos) =>
+        d.gimnasio.total + d.productos.total + d.otros.total;
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF({ orientation: "landscape", format: "a4" });
+      doc.setFontSize(16);
+      const etiquetaAgrupar = { dia: "día", semana: "semana", mes: "mes" }[agruparOrigenPor];
+      doc.text(`Ingresos por origen (por ${etiquetaAgrupar})`, 14, 16);
+      doc.setFontSize(10);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeOrigen)} al ${formatearFecha(fechaHastaOrigen)}`,
+        14,
+        23,
+      );
+
+      const celdas = (d: DesgloseIngresos) => [
+        formatMiles(d.gimnasio.efectivo),
+        formatMiles(d.gimnasio.pos),
+        formatMiles(d.gimnasio.voucher),
+        formatMiles(d.gimnasio.transfer),
+        formatMiles(d.gimnasio.total),
+        formatMiles(d.productos.efectivo),
+        formatMiles(d.productos.pos),
+        formatMiles(d.productos.voucher),
+        formatMiles(d.productos.transfer),
+        formatMiles(d.productos.total),
+        ...(conOtros ? [formatMiles(d.otros.total)] : []),
+        formatMiles(totalFila(d)),
+      ];
+      const medios = ["Efectivo", "POS", "Voucher", "Transfer", "Total"];
+      const numCols = 1 + 10 + (conOtros ? 1 : 0) + 1;
+
+      autoTable(doc, {
+        head: [
+          [
+            { content: "Período", rowSpan: 2, styles: { halign: "left", valign: "middle" } },
+            { content: "GIMNASIO", colSpan: 5, styles: { halign: "center" } },
+            { content: "PRODUCTOS", colSpan: 5, styles: { halign: "center" } },
+            ...(conOtros ? [{ content: "Otros", rowSpan: 2, styles: { valign: "middle" as const } }] : []),
+            { content: "Total", rowSpan: 2, styles: { valign: "middle" } },
+          ],
+          [...medios, ...medios],
+        ],
+        body: filas.map((f) => [f.label, ...celdas(f.d)]),
+        foot: [[{ content: "TOTAL", styles: { halign: "left" } }, ...celdas(totales)]],
+        startY: 30,
+        theme: "grid",
+        headStyles: { fillColor: [37, 99, 235], fontSize: 8, halign: "right" },
+        footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold", halign: "right" },
+        styles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+        columnStyles: Object.fromEntries(
+          Array.from({ length: numCols - 1 }, (_, i) => [i + 1, { halign: "right" }]),
+        ),
+      });
+
+      let y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+      doc.setFontSize(11);
+      doc.text("TOTALES DEL PERÍODO", 14, y);
+      y += 6;
+      doc.setFontSize(10);
+      const resumen = ORIGENES.filter((o) => o.key !== "otros" || conOtros)
+        .map((o) => `${o.label}: Gs. ${formatMiles(totales[o.key].total)}`)
+        .join("  |  ");
+      doc.text(resumen, 14, y);
+      y += 7;
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Total ingresos: Gs. ${formatMiles(totalFila(totales))}`, 14, y);
+      doc.setFont("helvetica", "normal");
+      if (conOtros) {
+        y += 6;
+        doc.setFontSize(8);
+        doc.text("Otros: cobros de cancha y movimientos que no son suscripciones ni ventas.", 14, y);
+      }
+
+      doc.save(`ingresos_origen_${agruparOrigenPor}_${fechaDesdeOrigen}_${fechaHastaOrigen}.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e?.message || "Error al generar reporte de ingresos por origen");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const exportarCierrePDF = async () => {
     if (resumenesCierre.length === 0) return;
     const { jsPDF, autoTable } = await loadPdf();
@@ -1822,7 +1987,19 @@ const ReportesPage: React.FC = () => {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               Caja
             </h2>
-            <span className="text-xs text-slate-400">1 reporte</span>
+            <span className="text-xs text-slate-400">2 reportes</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+            {renderCard(
+              "Ingresos por origen",
+              "Ingresos de Gimnasio (suscripciones) y de Productos (ventas) por separado, por día/semana/mes y medio de pago.",
+              "🧮",
+              "border-amber-300",
+              () => {
+                setError(null);
+                setReporteActivo("origen");
+              },
+            )}
           </div>
           <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
             <div className="flex items-start gap-3 mb-4">
@@ -2097,6 +2274,7 @@ const ReportesPage: React.FC = () => {
                 {reporteActivo === "ventas" && "Ventas por cliente"}
                 {reporteActivo === "movimientos" && "Productos vendidos y comprados"}
                 {reporteActivo === "masvendidos" && "Productos más vendidos"}
+                {reporteActivo === "origen" && "Ingresos por origen"}
               </h3>
               <button
                 onClick={() => setReporteActivo(null)}
@@ -2192,6 +2370,65 @@ const ReportesPage: React.FC = () => {
                   onClick={handleGenerarReporteCobranza}
                   disabled={loading}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "origen" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeOrigen}
+                      onChange={(e) => setFechaDesdeOrigen(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaOrigen}
+                      onChange={(e) => setFechaHastaOrigen(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Agrupar por
+                  </label>
+                  <div className="flex gap-2">
+                    {(["dia", "semana", "mes"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setAgruparOrigenPor(opt)}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium border transition ${
+                          agruparOrigenPor === opt
+                            ? "bg-amber-600 text-white border-amber-600"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {opt === "dia" ? "Día" : opt === "semana" ? "Semana" : "Mes"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteOrigen}
+                  disabled={loading}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
                 >
                   {loading ? "Generando…" : "Generar PDF"}
                 </button>
