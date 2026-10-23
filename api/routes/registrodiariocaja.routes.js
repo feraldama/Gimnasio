@@ -20,6 +20,13 @@ router.get(
 // para chequear si hay caja abierta del usuario actual — no requiere permiso
 // sobre RegistroDiarioCaja, solo autenticación.
 router.get("/estado-apertura", registroDiarioCajaController.estadoAperturaPorUsuario);
+// Resumen de cierre: el operador sólo tiene APERTURACAJA, no el libro de caja
+// completo (REGISTRODIARIOCAJA). Devuelve únicamente su propio turno.
+router.get(
+  "/turno-actual",
+  requirePerm("APERTURACAJA", "leer"),
+  registroDiarioCajaController.turnoActual
+);
 router.get(
   "/rango",
   requirePerm("REGISTRODIARIOCAJA", "leer"),

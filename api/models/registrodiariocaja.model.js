@@ -526,6 +526,28 @@ const RegistroDiarioCaja = {
       );
     });
   },
+
+  // Registros del último turno del usuario en la caja: desde su última
+  // apertura en adelante (incluye el cierre si ya lo hizo). Es lo que necesita
+  // el resumen de cierre, sin exponer el libro de caja de otros usuarios.
+  getTurnoActualUsuario: (usuarioId, cajaId) => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        `SELECT * FROM registrodiariocaja
+         WHERE UsuarioId = ? AND CajaId = ?
+           AND RegistroDiarioCajaId >= (
+             SELECT COALESCE(MAX(RegistroDiarioCajaId), 0) FROM registrodiariocaja
+             WHERE UsuarioId = ? AND CajaId = ? AND TipoGastoId = 2 AND TipoGastoGrupoId = 2
+           )
+         ORDER BY RegistroDiarioCajaId DESC`,
+        [usuarioId, cajaId, usuarioId, cajaId],
+        (err, results) => {
+          if (err) return reject(err);
+          resolve(results);
+        }
+      );
+    });
+  },
 };
 
 module.exports = RegistroDiarioCaja;

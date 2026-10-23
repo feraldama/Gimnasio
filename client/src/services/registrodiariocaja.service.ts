@@ -23,6 +23,22 @@ export const aperturaCierreCaja = async (data: {
   }
 };
 
+export const getTurnoActual = async (cajaId: string | number) => {
+  try {
+    const response = await api.get(`/registrodiariocaja/turno-actual`, {
+      params: { cajaId },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al cargar los registros del turno",
+      }
+    );
+  }
+};
+
 export const getEstadoAperturaPorUsuario = async (
   usuarioId: string | number
 ) => {

@@ -258,6 +258,25 @@ exports.aperturaCierreCaja = async (req, res) => {
   }
 };
 
+// Registros del turno actual del usuario logueado (para el resumen de cierre).
+// El usuario sale del token, no del query: así no se puede leer el turno ajeno.
+exports.turnoActual = async (req, res) => {
+  try {
+    const cajaId = req.query.cajaId;
+    if (!cajaId) {
+      return res.status(400).json({ message: "Falta el parámetro cajaId" });
+    }
+    const data = await RegistroDiarioCaja.getTurnoActualUsuario(
+      req.user.id,
+      cajaId
+    );
+    res.json({ data });
+  } catch (error) {
+    console.error(error);
+    sendError(res, error, 500);
+  }
+};
+
 // Nuevo endpoint para saber si el usuario tiene caja aperturada
 exports.estadoAperturaPorUsuario = async (req, res) => {
   try {

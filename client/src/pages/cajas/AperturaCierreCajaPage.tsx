@@ -6,13 +6,13 @@ import { usePermiso } from "../../hooks/usePermiso";
 import {
   aperturaCierreCaja,
   getEstadoAperturaPorUsuario,
+  getTurnoActual,
 } from "../../services/registrodiariocaja.service";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
 import { formatMiles, todayLocalISO, formatDateLocal } from "../../utils/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { loadPdf } from "../../utils/lazyPdf";
-import { getRegistrosDiariosCaja } from "../../services/registros.service";
 
 import type { Caja } from "../../types";
 
@@ -100,16 +100,9 @@ export default function AperturaCierreCajaPage() {
   // Obtener registros de la caja al cerrar
   const fetchRegistrosCaja = async () => {
     try {
-      // Traer todos los registros sin filtrar primero
-      const data = await getRegistrosDiariosCaja(1, 1000, undefined, "desc");
-
-      // Filtrar por caja y usuario
-      const registrosFiltrados = data.data.filter(
-        (r: RegistroDiarioCaja) =>
-          r.CajaId == cajaId && r.UsuarioId === user?.id
-      );
-
-      setRegistrosCaja(registrosFiltrados);
+      // Sólo los registros del turno del usuario en esta caja
+      const data = await getTurnoActual(cajaId);
+      setRegistrosCaja(data.data);
     } catch (error) {
       console.error("Error al cargar registros:", error);
       setRegistrosCaja([]);
@@ -127,12 +120,8 @@ export default function AperturaCierreCajaPage() {
 
     if (registrosParaUsar.length === 0) {
       try {
-        const data = await getRegistrosDiariosCaja(1, 1000, undefined, "desc");
-        const registrosFiltrados = data.data.filter(
-          (r: RegistroDiarioCaja) =>
-            r.CajaId == cajaId && r.UsuarioId === user?.id
-        );
-        registrosParaUsar = registrosFiltrados;
+        const data = await getTurnoActual(cajaId);
+        registrosParaUsar = data.data;
 
         if (registrosParaUsar.length === 0) {
           Swal.fire({
