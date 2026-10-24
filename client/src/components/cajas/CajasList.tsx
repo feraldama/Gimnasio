@@ -5,6 +5,7 @@ import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
+import { getLocales } from "../../services/locales.service";
 
 import type { Caja } from "../../types";
 
@@ -54,7 +55,25 @@ export default function CajasList({
     CajaId: "",
     CajaDescripcion: "",
     CajaMonto: 0,
+    LocalId: 0,
   });
+  const [locales, setLocales] = useState<
+    { LocalId: number; LocalNombre: string }[]
+  >([]);
+
+  useEffect(() => {
+    getLocales(1, 200)
+      .then((res) => setLocales(res.data || []))
+      .catch((err) => console.error("Error al cargar locales:", err));
+  }, []);
+
+  // LocalId 0 es "TODOS" en la tabla local: para una caja significa que no es
+  // de ningún local (cajas administrativas).
+  const nombreLocal = (id?: number) =>
+    !id
+      ? "Sin local"
+      : locales.find((l) => Number(l.LocalId) === Number(id))?.LocalNombre ||
+        String(id);
 
   useEffect(() => {
     if (currentCaja) {
@@ -63,6 +82,7 @@ export default function CajasList({
         CajaId: String(currentCaja.CajaId),
         CajaDescripcion: currentCaja.CajaDescripcion,
         CajaMonto: currentCaja.CajaMonto,
+        LocalId: Number(currentCaja.LocalId) || 0,
       });
     } else {
       setFormData({
@@ -70,6 +90,7 @@ export default function CajasList({
         CajaId: "",
         CajaDescripcion: "",
         CajaMonto: 0,
+        LocalId: 0,
       });
     }
   }, [currentCaja]);
@@ -80,7 +101,8 @@ export default function CajasList({
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === "CajaMonto" ? Number(value) : value,
+      [name]:
+        name === "CajaMonto" || name === "LocalId" ? Number(value) : value,
     }));
   };
 
@@ -98,6 +120,11 @@ export default function CajasList({
   const columns = [
     { key: "CajaId", label: "ID" },
     { key: "CajaDescripcion", label: "Descripción" },
+    {
+      key: "LocalId",
+      label: "Local",
+      render: (caja: Caja) => nombreLocal(caja.LocalId),
+    },
     {
       key: "CajaMonto",
       label: "Monto",
@@ -253,6 +280,33 @@ export default function CajasList({
                       className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
                       required
                     />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="LocalId"
+                      className="block mb-2 text-sm font-medium text-gray-900"
+                    >
+                      Local
+                    </label>
+                    <select
+                      name="LocalId"
+                      id="LocalId"
+                      value={formData.LocalId}
+                      onChange={handleInputChange}
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+                    >
+                      <option value={0}>Sin local (administrativa)</option>
+                      {locales
+                        .filter((l) => Number(l.LocalId) !== 0)
+                        .map((l) => (
+                          <option key={l.LocalId} value={l.LocalId}>
+                            {l.LocalNombre}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Define en qué local se reportan los movimientos de esta caja.
+                    </p>
                   </div>
                 </div>
               </div>

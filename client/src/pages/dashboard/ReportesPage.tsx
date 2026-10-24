@@ -27,6 +27,8 @@ import {
 } from "../../utils/cajaOrigen";
 import { getSuscripcionesProximasAVencer } from "../../services/suscripciones.service";
 import { getReporteCobranza } from "../../services/pagos.service";
+import { getResumenLocal } from "../../services/reportes.service";
+import { generarPDFResumenLocal } from "../../utils/pdfResumenLocal";
 import {
   getRankingAsistencia,
   type RankingAsistenciaRow,
@@ -126,6 +128,8 @@ interface ResumenCierre {
   fechaCierreDate: Date;
   cajaId: number;
   cajaDescripcion: string;
+  /** Local de la caja (caja.LocalId); 0 = sin local. */
+  localId: number;
   usuarioId: string;
   apertura: number;
   cierre: number;
@@ -284,6 +288,7 @@ function buildResumenesCierre(
       fechaCierreDate,
       cajaId: cierreReg.CajaId,
       cajaDescripcion: cierreReg.CajaDescripcion ?? `Caja ${cierreReg.CajaId}`,
+      localId: Number(cierreReg.LocalId) || 0,
       usuarioId: cierreReg.UsuarioId,
       ...totals,
     });
@@ -431,6 +436,14 @@ const ReportesPage: React.FC = () => {
   });
   const [fechaHastaRank, setFechaHastaRank] = useState(() => getHoyISO());
   const [limitRank, setLimitRank] = useState(20);
+
+  // Resumen por local (Gimnasio / Salón / total general)
+  const [fechaDesdeLocal, setFechaDesdeLocal] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaLocal, setFechaHastaLocal] = useState(() => getHoyISO());
 
   // Ingresos por origen (Gimnasio / Productos)
   const [fechaDesdeOrigen, setFechaDesdeOrigen] = useState(() => {
@@ -1668,6 +1681,36 @@ const ReportesPage: React.FC = () => {
     }
   };
 
+  const handleGenerarResumenLocal = async () => {
+    if (!fechaDesdeLocal || !fechaHastaLocal) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (fechaDesdeLocal > fechaHastaLocal) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getResumenLocal(fechaDesdeLocal, fechaHastaLocal);
+      // Los turnos apertura→cierre se arman igual que en "Cierre de caja por
+      // rango"; cada cierre trae el local de su caja.
+      const cierres = buildResumenesCierre(
+        data.caja,
+        fechaDesdeLocal,
+        fechaHastaLocal,
+      );
+      await generarPDFResumenLocal(data, cierres);
+      setReporteActivo(null);
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e?.message || "Error al generar el resumen por local");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGenerarReporteOrigen = async () => {
     if (!fechaDesdeOrigen || !fechaHastaOrigen) {
       setError("Debes seleccionar ambas fechas");
@@ -2147,9 +2190,19 @@ const ReportesPage: React.FC = () => {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               Caja
             </h2>
-            <span className="text-xs text-slate-400">2 reportes</span>
+            <span className="text-xs text-slate-400">3 reportes</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+            {renderCard(
+              "Resumen por local",
+              "Gimnasio y Salón por separado y total general: suscripciones, ventas, caja, faltantes, créditos y stock.",
+              "🏢",
+              "border-blue-300",
+              () => {
+                setError(null);
+                setReporteActivo("local");
+              },
+            )}
             {renderCard(
               "Ingresos por origen",
               "Ingresos de Gimnasio (suscripciones) y de Productos (ventas) por separado, por día/semana/mes y medio de pago.",
@@ -2498,6 +2551,7 @@ const ReportesPage: React.FC = () => {
                 {reporteActivo === "movimientos" && "Productos vendidos y comprados"}
                 {reporteActivo === "masvendidos" && "Productos más vendidos"}
                 {reporteActivo === "origen" && "Ingresos por origen"}
+                {reporteActivo === "local" && "Resumen por local"}
               </h3>
               <button
                 onClick={() => setReporteActivo(null)}
@@ -2593,6 +2647,47 @@ const ReportesPage: React.FC = () => {
                   onClick={handleGenerarReporteCobranza}
                   disabled={loading}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "local" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeLocal}
+                      onChange={(e) => setFechaDesdeLocal(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaLocal}
+                      onChange={(e) => setFechaHastaLocal(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Cada caja se reporta en el local que tiene asignado en la pantalla Cajas.
+                </p>
+                <button
+                  onClick={handleGenerarResumenLocal}
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
                 >
                   {loading ? "Generando…" : "Generar PDF"}
                 </button>

@@ -104,6 +104,141 @@ function pasoParaRango(dias) {
 exports.parseRangoFechas = parseRangoFechas;
 exports.pasoParaRango = pasoParaRango;
 
+// ============================================================
+// RESUMEN POR LOCAL (Gimnasio / Salón / total general)
+// ============================================================
+// Datos para el reporte consolidado por local. Cada fuente se atribuye a un
+// local con la clave que la representa de verdad:
+//   - ventas            → venta.AlmacenId (el POS vende desde el almacén del
+//                          local del usuario; AlmacenId == LocalId)
+//   - suscripciones     → local del usuario que cobró (pago.PagoUsuarioId).
+//                          No se usa la caja: un pago sólo llega a la caja si
+//                          había una abierta.
+//   - movimientos caja  → caja.LocalId (migración 022)
+//   - créditos / stock  → venta.AlmacenId / productoalmacen.AlmacenId
+// Lo que no tiene local (0) se devuelve igual: el cliente lo muestra en una
+// columna "Sin local" sólo si aparece.
+//
+// La cancha queda afuera a propósito (decisión del cliente: no se usa).
+//
+// Los alias van en snake_case: el adapter de la base renombra a PascalCase
+// los nombres que coinciden con columnas reales (ver config/db.js), y
+// `localid` lo convertiría en `LocalId`.
+exports.resumenLocal = async (req, res) => {
+  try {
+    const { desde, hasta, error } = parseRangoFechas(req);
+    if (error) return res.status(400).json({ error });
+
+    const queryAsync = (sql, params) =>
+      new Promise((resolve, reject) => {
+        db.query(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+      });
+
+    const sqlLocales = `
+      SELECT LocalId, LocalNombre FROM local WHERE LocalId <> 0 ORDER BY LocalId
+    `;
+    const sqlVentas = `
+      SELECT v.AlmacenId AS local_id,
+             v.VentaTipo AS tipo,
+             COUNT(*)::int AS cantidad,
+             COALESCE(SUM(v.Total), 0)::bigint AS total
+      FROM venta v
+      WHERE DATE(v.VentaFecha) BETWEEN ?::date AND ?::date
+      GROUP BY v.AlmacenId, v.VentaTipo
+    `;
+    const sqlSuscripciones = `
+      SELECT COALESCE(u.LocalId, 0) AS local_id,
+             p.PagoTipo AS tipo,
+             COUNT(*)::int AS cantidad,
+             COALESCE(SUM(p.PagoMonto), 0)::bigint AS total
+      FROM pago p
+      LEFT JOIN usuario u ON u.UsuarioId = p.PagoUsuarioId
+      WHERE p.PagoFecha BETWEEN ?::date AND ?::date
+      GROUP BY COALESCE(u.LocalId, 0), p.PagoTipo
+    `;
+    // Ventas cobradas (algo entregado) que no dejaron ningún movimiento en
+    // caja: pasa cuando se vende con la caja del usuario cerrada. Esa plata no
+    // aparece en ningún cierre, así que es lo primero a revisar ante un
+    // faltante. El detalle de caja termina en "N°: <VentaId>" (venta.controller).
+    const sqlVentasSinCaja = `
+      SELECT v.VentaId, v.VentaFecha, v.AlmacenId AS local_id, v.VentaTipo,
+             v.Total, v.VentaEntrega, v.VentaUsuario
+      FROM venta v
+      WHERE DATE(v.VentaFecha) BETWEEN ?::date AND ?::date
+        AND v.VentaEntrega > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM registrodiariocaja r
+          WHERE r.TipoGastoId = 2
+            AND r.RegistroDiarioCajaDetalle ILIKE 'Venta%'
+            AND r.RegistroDiarioCajaDetalle ~ (': ' || v.VentaId::text || '$')
+        )
+      ORDER BY v.VentaId
+    `;
+    // Saldos al día de hoy (no dependen del rango).
+    const sqlCreditos = `
+      SELECT v.AlmacenId AS local_id,
+             COUNT(*)::int AS cantidad,
+             COALESCE(SUM(v.Total - COALESCE(v.VentaEntrega, 0)), 0)::bigint AS saldo
+      FROM venta v
+      WHERE v.VentaTipo = 'CR' AND v.Total - COALESCE(v.VentaEntrega, 0) > 0
+      GROUP BY v.AlmacenId
+    `;
+    // Misma fórmula que el reporte "Stock valorizado" (cajas a precio
+    // promedio + unidades sueltas a precio promedio / unidades por caja), pero
+    // con el stock de cada almacén.
+    const sqlStock = `
+      SELECT pa.AlmacenId AS local_id,
+             COALESCE(SUM(
+               COALESCE(pa.ProductoAlmacenStock, 0) * COALESCE(p.ProductoPrecioPromedio, 0)
+               + COALESCE(pa.ProductoAlmacenStockUnitario, 0) *
+                 CASE WHEN COALESCE(p.ProductoCantidadCaja, 0) > 0
+                      THEN COALESCE(p.ProductoPrecioPromedio, 0)::numeric / p.ProductoCantidadCaja
+                      ELSE 0 END
+             ), 0)::bigint AS valor
+      FROM productoalmacen pa
+      JOIN producto p ON p.ProductoId = pa.ProductoId
+      WHERE COALESCE(pa.ProductoAlmacenStock, 0) > 0
+         OR COALESCE(pa.ProductoAlmacenStockUnitario, 0) > 0
+      GROUP BY pa.AlmacenId
+    `;
+    // Movimientos de caja con un día de margen a cada lado (como /rango): el
+    // cliente arma los turnos apertura→cierre y recorta por fecha local.
+    const sqlCaja = `
+      SELECT r.*, c.CajaDescripcion, c.LocalId
+      FROM registrodiariocaja r
+      LEFT JOIN Caja c ON r.CajaId = c.CajaId
+      WHERE DATE(r.RegistroDiarioCajaFecha) BETWEEN (?::date - 1) AND (?::date + 1)
+      ORDER BY r.RegistroDiarioCajaId ASC
+    `;
+
+    const [locales, ventas, suscripciones, ventasSinCaja, creditos, stock, caja] =
+      await Promise.all([
+        queryAsync(sqlLocales, []),
+        queryAsync(sqlVentas, [desde, hasta]),
+        queryAsync(sqlSuscripciones, [desde, hasta]),
+        queryAsync(sqlVentasSinCaja, [desde, hasta]),
+        queryAsync(sqlCreditos, []),
+        queryAsync(sqlStock, []),
+        queryAsync(sqlCaja, [desde, hasta]),
+      ]);
+
+    res.json({
+      fechaDesde: desde,
+      fechaHasta: hasta,
+      locales,
+      ventas,
+      suscripciones,
+      ventasSinCaja,
+      creditos,
+      stock,
+      caja,
+    });
+  } catch (error) {
+    console.error("Error en resumen por local:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // Mapea un dia (1-31) a la semana del mes con bucketing fijo:
 //   dias 1-7   -> 1, 8-14 -> 2, 15-21 -> 3, 22-fin -> 4
 // Esto da exactamente 4 buckets sin importar el largo del mes, que es lo que

@@ -40,6 +40,12 @@ router.get(
   requireAnyPerm(LECTORES_REPORTE_GRAFICO, "leer"),
   ctrl.cantinaDiario
 );
+// Reporte consolidado "Resumen por local" de la pantalla de Reportes.
+router.get(
+  "/resumen-local",
+  requireAnyPerm(["REPORTES"], "leer"),
+  ctrl.resumenLocal
+);
 // Los KPIs del Dashboard quedan sólo detrás de autenticación a propósito: el
 // Dashboard no tiene menú propio y es la landing de todo usuario logueado
 // (sólo gatea el botón de cobro con PAGOS/crear). Meterle un requirePerm acá

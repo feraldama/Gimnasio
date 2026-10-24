@@ -114,6 +114,8 @@ export interface RegistroDiarioCajaRow {
   TipoGastoGrupoId: number;
   RegistroDiarioCajaDetalle?: string;
   CajaDescripcion?: string;
+  /** Local de la caja (caja.LocalId); 0 = caja sin local. */
+  LocalId?: number;
 }
 
 export const getRegistroDiarioCajaById = async (id: string | number) => {

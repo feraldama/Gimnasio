@@ -479,6 +479,7 @@ const RegistroDiarioCaja = {
       const query = `
         SELECT r.*,
           c.CajaDescripcion,
+          c.LocalId,
           t.TipoGastoDescripcion,
           tg.TipoGastoGrupoDescripcion
         FROM registrodiariocaja r

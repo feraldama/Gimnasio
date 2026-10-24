@@ -39,11 +39,12 @@ const LECTORES_ALMACEN = [
   "NUEVACOMPRA",
 ];
 
-// El combo de locales aparece en el form de Usuarios además de los flujos de
-// cantina.
+// El combo de locales aparece en el form de Usuarios y en el de Cajas (cada
+// caja pertenece a un local, migración 022) además de los flujos de cantina.
 const LECTORES_LOCAL = [
   "LOCALES",
   "USUARIOS",
+  "CAJAS",
   "PRODUCTOS",
   "INVENTARIO",
   "NUEVAVENTA",

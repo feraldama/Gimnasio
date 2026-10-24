@@ -15,6 +15,8 @@ export interface Caja {
   CajaId: string | number;
   CajaDescripcion: string;
   CajaMonto: number;
+  /** Local al que pertenece la caja; 0 = sin local (cajas administrativas). */
+  LocalId?: number;
   [key: string]: unknown;
 }
 

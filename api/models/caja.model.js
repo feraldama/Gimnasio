@@ -21,8 +21,13 @@ const Caja = {
 
   create: (cajaData) => {
     return new Promise((resolve, reject) => {
-      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto) VALUES (?, ?)`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto];
+      // LocalId 0 = sin local (cajas administrativas). Ver migración 022.
+      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto, LocalId) VALUES (?, ?, ?)`;
+      const values = [
+        cajaData.CajaDescripcion,
+        cajaData.CajaMonto,
+        Number(cajaData.LocalId) || 0,
+      ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         // Obtener la caja recién creada
@@ -35,8 +40,13 @@ const Caja = {
 
   update: (id, cajaData) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ? WHERE CajaId = ?`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, id];
+      // Si el body no trae LocalId se conserva el que tenía.
+      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ?, LocalId = COALESCE(?, LocalId) WHERE CajaId = ?`;
+      const localId =
+        cajaData.LocalId === undefined || cajaData.LocalId === ""
+          ? null
+          : Number(cajaData.LocalId) || 0;
+      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, localId, id];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         if (result.affectedRows === 0) return resolve(null);

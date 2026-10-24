@@ -1,5 +1,6 @@
 import api from "./api";
 import type { AxiosError } from "axios";
+import type { RegistroDiarioCajaRow } from "./registros.service";
 
 export interface ReporteGimnasioRow {
   semana: string;
@@ -303,5 +304,57 @@ export const getDashboardGimnasioKpis = async (): Promise<DashboardGimnasioKpis>
   } catch (e) {
     const ax = e as AxiosError<{ message?: string }>;
     throw ax.response?.data || { message: "Error al obtener KPIs" };
+  }
+};
+
+// ===== Resumen por local (Gimnasio / Salón / total general) =====
+// `local_id` 0 = sin local (venta de un admin, caja administrativa).
+
+export interface ResumenLocalMontoRow {
+  local_id: number;
+  tipo: string;
+  cantidad: number;
+  total: number;
+}
+
+export interface ResumenLocalVentaSinCaja {
+  VentaId: number;
+  VentaFecha: string;
+  local_id: number;
+  VentaTipo: string;
+  Total: number;
+  VentaEntrega: number;
+  VentaUsuario: string;
+}
+
+export interface ResumenLocalResponse {
+  fechaDesde: string;
+  fechaHasta: string;
+  locales: { LocalId: number; LocalNombre: string }[];
+  ventas: ResumenLocalMontoRow[];
+  suscripciones: ResumenLocalMontoRow[];
+  ventasSinCaja: ResumenLocalVentaSinCaja[];
+  creditos: { local_id: number; cantidad: number; saldo: number }[];
+  stock: { local_id: number; valor: number }[];
+  /** Movimientos de caja con un día de margen a cada lado, con caja.LocalId. */
+  caja: RegistroDiarioCajaRow[];
+}
+
+export const getResumenLocal = async (
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<ResumenLocalResponse> => {
+  try {
+    const r = await api.get("/reportes/resumen-local", {
+      params: { fechaDesde, fechaHasta },
+    });
+    return r.data as ResumenLocalResponse;
+  } catch (e) {
+    const ax = e as AxiosError<{ error?: string; message?: string }>;
+    const data = ax.response?.data;
+    throw {
+      message:
+        data?.error || data?.message || "Error al obtener el resumen por local",
+    };
   }
 };
