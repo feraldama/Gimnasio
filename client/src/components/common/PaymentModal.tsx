@@ -132,7 +132,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         banco -
         bancoCredito -
         cuentaCliente -
-        deb * 1.03 -
+        deb -
         vou;
       setBancoDebito(deb);
     } else if (pagoTipo === "CR") {
@@ -143,7 +143,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         banco -
         bancoDebito -
         cuentaCliente -
-        cred * 1.05 -
+        cred -
         vou;
       setBancoCredito(cred);
     } else if (pagoTipo === "C") {
@@ -489,7 +489,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   marginRight: 8,
                 }}
               >
-                Tarjeta Débito (3% adicional):
+                Tarjeta Débito:
               </label>
               <input
                 type="text"
@@ -498,7 +498,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 onFocus={(e) => {
                   setPagoTipoLocal("D");
                   if (bancoDebito === 0) {
-                    setBancoDebito(Number((totalRest * 1.03).toFixed(0)));
+                    setBancoDebito(totalRest);
                     setTotalRest(0);
                   }
                   e.target.select();
@@ -538,7 +538,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   marginRight: 8,
                 }}
               >
-                Tarjeta Crédito (5% adicional):
+                Tarjeta Crédito:
               </label>
               <input
                 type="text"
@@ -547,7 +547,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 onFocus={(e) => {
                   setPagoTipoLocal("CR");
                   if (bancoCredito === 0) {
-                    setBancoCredito(Number((totalRest * 1.05).toFixed(0)));
+                    setBancoCredito(totalRest);
                     setTotalRest(0);
                   }
                   e.target.select();
