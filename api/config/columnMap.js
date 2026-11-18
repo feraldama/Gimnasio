@@ -186,7 +186,18 @@ module.exports = {
   "ventaproductocantidad": "VentaProductoCantidad",
   "ventaproductoprecio": "VentaProductoPrecio",
   "ventaproductopreciototal": "VentaProductoPrecioTotal",
-  "ventaproductounitario": "VentaProductoUnitario"
+  "ventaproductounitario": "VentaProductoUnitario",
+  "aperturaref": "AperturaRef",
+  "aperturaid": "AperturaId",
+  "cierreid": "CierreId",
+  "correccioncajaid": "CorreccionCajaId",
+  "correccioncajafecha": "CorreccionCajaFecha",
+  "correccioncajaentidad": "CorreccionCajaEntidad",
+  "correccioncajaentidadid": "CorreccionCajaEntidadId",
+  "correccioncajaaccion": "CorreccionCajaAccion",
+  "correccioncajamotivo": "CorreccionCajaMotivo",
+  "correccioncajaantes": "CorreccionCajaAntes",
+  "correccioncajadespues": "CorreccionCajaDespues"
 },
   pkByTable: {
   "almacen": "AlmacenId",
@@ -226,6 +237,7 @@ module.exports = {
   "cancha_tarifa": "CanchaTarifaId",
   "cancha_credito": "CanchaCreditoId",
   "cancha_credito_pago": "CanchaCreditoId",
-  "cancha_bloqueo": "CanchaBloqueoId"
+  "cancha_bloqueo": "CanchaBloqueoId",
+  "correccioncaja": "CorreccionCajaId"
 },
 };

@@ -244,13 +244,13 @@ exports.createLote = async (req, res) => {
     if (cajaAbierta) {
       // Un movimiento por método (para que el detalle quede legible en el reporte de caja)
       let totalEfectivo = 0;
-      for (const p of pagos) {
+      for (const [idx, p] of pagos.entries()) {
         const tipoGastoGrupoId = getTipoGastoGrupoId(p.PagoTipo);
         const detalle = `Pago suscripción #${suscripcionId} - ${getLabel(p.PagoTipo)}`;
         await connection.query(
           `INSERT INTO registrodiariocaja
-           (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, PagoId)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             apertura.CajaId,
             p.PagoFecha || todayLocalISO(),
@@ -259,6 +259,7 @@ exports.createLote = async (req, res) => {
             detalle,
             p.PagoMonto,
             usuarioId,
+            pagosCreados[idx].PagoId,
           ]
         );
         if (p.PagoTipo === "CO") totalEfectivo += Number(p.PagoMonto);
@@ -429,8 +430,8 @@ exports.create = async (req, res) => {
 
       await connection.query(
         `INSERT INTO registrodiariocaja
-         (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, PagoId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           apertura.CajaId,
           pagoFecha,
@@ -439,6 +440,7 @@ exports.create = async (req, res) => {
           detalle,
           pagoMonto,
           pagoUsuarioId,
+          pagoId,
         ]
       );
 

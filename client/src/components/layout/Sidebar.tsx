@@ -18,6 +18,7 @@ import {
   ChartBarIcon,
   ShoppingCartIcon,
   DocumentTextIcon,
+  MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 import { Link, useLocation } from "react-router-dom";
 import type { Dispatch, SetStateAction } from "react";
@@ -54,6 +55,12 @@ const navigation: NavigationItem[] = [
     name: "Apertura/Cierre de Caja",
     href: "/apertura-cierre-caja",
     icon: <LockClosedIcon className="h-7 w-6" />,
+  },
+  {
+    // "¿Ya se cargó?": consulta de ventas y cobros del día del local.
+    name: "Ventas y cobros del día",
+    href: "/movimientos-dia",
+    icon: <MagnifyingGlassIcon className="h-7 w-6" />,
   },
   {
     name: "Gimnasio",

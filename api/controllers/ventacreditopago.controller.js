@@ -205,8 +205,8 @@ exports.recibir = async (req, res) => {
         await conn.query(
           `INSERT INTO registrodiariocaja (
              CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-             RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-           ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+             RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, VentaId
+           ) VALUES (?, ?, 2, ?, ?, ?, ?, ?)`,
           [
             CajaId,
             fecha,
@@ -214,6 +214,7 @@ exports.recibir = async (req, res) => {
             `${detallePrefix}${r.VentaId}`,
             montoCobrado,
             UsuarioId,
+            r.VentaId,
           ]
         );
 

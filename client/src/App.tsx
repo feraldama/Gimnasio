@@ -56,6 +56,9 @@ const SuscripcionesVigentesPage = lazy(
 );
 const PlanesPage = lazy(() => import("./pages/planes/PlanesPage"));
 const PagosPage = lazy(() => import("./pages/pagos/PagosPage"));
+const MovimientosDiaPage = lazy(
+  () => import("./pages/movements/MovimientosDiaPage")
+);
 const ReporteCobranzaPage = lazy(
   () => import("./pages/pagos/ReporteCobranzaPage")
 );
@@ -197,6 +200,7 @@ function App() {
                 element={<SuscripcionesVigentesPage />}
               />
               <Route path="/pagos" element={<PagosPage />} />
+              <Route path="/movimientos-dia" element={<MovimientosDiaPage />} />
               <Route
                 path="/reporte-cobranza"
                 element={<ReporteCobranzaPage />}

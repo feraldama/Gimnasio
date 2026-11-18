@@ -625,8 +625,8 @@ exports.confirmar = async (req, res) => {
       await conn.query(
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, VentaId
+         ) VALUES (?, ?, 2, ?, ?, ?, ?, ?)`,
         [
           CajaId,
           ventaFecha,
@@ -634,6 +634,7 @@ exports.confirmar = async (req, res) => {
           isCredito ? `Venta Crédito N°: ${ultorden}` : `Venta N°: ${ultorden}`,
           efectivo,
           UsuarioId,
+          ultorden,
         ]
       );
     }
@@ -641,32 +642,33 @@ exports.confirmar = async (req, res) => {
       await conn.query(
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 4, ?, ?, ?)`,
-        [CajaId, ventaFecha, `Venta POS N°: ${ultorden}`, banco, UsuarioId]
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, VentaId
+         ) VALUES (?, ?, 2, 4, ?, ?, ?, ?)`,
+        [CajaId, ventaFecha, `Venta POS N°: ${ultorden}`, banco, UsuarioId, ultorden]
       );
     }
     if (voucher > 0) {
       await conn.query(
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 5, ?, ?, ?)`,
-        [CajaId, ventaFecha, `Venta Voucher N°: ${ultorden}`, voucher, UsuarioId]
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, VentaId
+         ) VALUES (?, ?, 2, 5, ?, ?, ?, ?)`,
+        [CajaId, ventaFecha, `Venta Voucher N°: ${ultorden}`, voucher, UsuarioId, ultorden]
       );
     }
     if (transferencia > 0) {
       await conn.query(
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 6, ?, ?, ?)`,
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, VentaId
+         ) VALUES (?, ?, 2, 6, ?, ?, ?, ?)`,
         [
           CajaId,
           ventaFecha,
           `Venta Transferencia N°: ${ultorden}`,
           transferencia,
           UsuarioId,
+          ultorden,
         ]
       );
     }
