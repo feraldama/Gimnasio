@@ -8,66 +8,18 @@
 //               dentro del plazo CORRECCION_CAJA_DIAS (configuración, def. 7).
 // Admin (UsuarioIsAdmin = 'S') es supervisor.
 const db = require("../config/db");
-const Configuracion = require("../models/configuracion.model");
 const Correccion = require("../models/correccionCaja.model");
-const { evaluarPermisoCorreccion, validarMotivo, MEDIOS } = require("../utils/correccionCaja");
+const { validarMotivo, MEDIOS } = require("../utils/correccionCaja");
+const { contexto, tienePermiso } = require("../utils/contextoCorreccion");
 const { turnoDeApertura, registrosDelTurno } = require("../utils/turnoCaja");
 const { diferenciaAlCerrar } = require("../utils/ticketCierre");
 const { todayLocalISO } = require("../utils/dateUtils");
 const { sendError } = require("../utils/errors");
 
 const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
-const PLAZO_DEFAULT = 7;
 // Tope de id para "turno abierto" en un BETWEEN: la columna es integer, un
 // Number.MAX_SAFE_INTEGER no entra y Postgres rechaza la consulta.
 const ID_MAX = 2147483647;
-
-async function tienePermiso(conn, usuarioId, menu, accion) {
-  const col = { leer: "puedeLeer", editar: "puedeEditar", eliminar: "puedeEliminar" }[accion];
-  const [rows] = await conn.query(
-    `SELECT 1 FROM usuarioperfil up
-     JOIN perfilmenu pm ON pm.PerfilId = up.PerfilId
-     WHERE up.UsuarioId = ? AND pm.MenuId = ? AND pm.${col} = 1
-     LIMIT 1`,
-    [usuarioId, menu]
-  );
-  return rows.length > 0;
-}
-
-/** Permisos del usuario + función `autorizar(turno)` para el modelo. */
-async function contexto(conn, user) {
-  const esAdmin = user?.isAdmin === "S";
-  const esSupervisor =
-    esAdmin || (await tienePermiso(conn, user.id, "CORRECCIONCAJA", "eliminar"));
-  const puedeEditarPropio =
-    esSupervisor || (await tienePermiso(conn, user.id, "CORRECCIONCAJA", "editar"));
-  const plazoDias = await Configuracion.getNumero("CORRECCION_CAJA_DIAS", PLAZO_DEFAULT);
-  const hoyISO = todayLocalISO();
-
-  const autorizar = (turno) => {
-    // Venta/pago sin movimiento de caja, o cargado con la caja cerrada: no
-    // es de ningún turno, sólo lo toca un supervisor.
-    if (!turno) {
-      return esSupervisor
-        ? { ok: true }
-        : {
-            ok: false,
-            status: 403,
-            message: "Sólo un supervisor puede corregir movimientos fuera de turno",
-          };
-    }
-    return evaluarPermisoCorreccion({
-      turno,
-      usuarioId: user.id,
-      esSupervisor,
-      puedeEditarPropio,
-      hoyISO,
-      plazoDias,
-    });
-  };
-
-  return { esSupervisor, puedeEditarPropio, plazoDias, hoyISO, autorizar };
-}
 
 async function conConexion(fn) {
   const conn = await db.promise().getConnection();

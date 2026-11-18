@@ -56,9 +56,10 @@ export interface CorreccionRegistrada {
   CorreccionCajaFecha: string;
   UsuarioId: string;
   UsuarioNombre: string | null;
-  CorreccionCajaEntidad: "VENTA" | "PAGO";
+  /** REGISTRO = movimiento editado/borrado desde Registro Diario Caja. */
+  CorreccionCajaEntidad: "VENTA" | "PAGO" | "REGISTRO";
   CorreccionCajaEntidadId: number;
-  CorreccionCajaAccion: "METODO" | "ANULAR" | "CARGAR";
+  CorreccionCajaAccion: "METODO" | "ANULAR" | "CARGAR" | "EDITAR" | "ELIMINAR";
   CorreccionCajaMotivo: string;
   CorreccionCajaAntes: Record<string, unknown> | null;
   CorreccionCajaDespues: Record<string, unknown> | null;

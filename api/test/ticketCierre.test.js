@@ -160,3 +160,30 @@ describe("diferenciaAlCerrar", () => {
     assert.equal(r, -150000);
   });
 });
+
+describe("correcciones desde Registro Diario Caja", () => {
+  const egreso = (monto) => ({ RegistroDiarioCajaId: 110, TipoGastoId: 1, TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: monto, AperturaRef: null });
+  test("borrar un egreso de 10.000 sube el esperado actual", () => {
+    const c = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "ELIMINAR", CorreccionCajaAntes: egreso(10000) };
+    assert.equal(ajustePorCorreccionesPosteriores([c], [], turno).ajuste, 10000);
+  });
+  test("editar un egreso de 10.000 a 4.000", () => {
+    const c = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "EDITAR", CorreccionCajaAntes: egreso(10000), CorreccionCajaDespues: egreso(4000) };
+    assert.equal(ajustePorCorreccionesPosteriores([c], [], turno).ajuste, 6000);
+  });
+  test("cierre viejo con el monto declarado corregido: vale el declarado original", () => {
+    const cierre = { RegistroDiarioCajaId: 120, TipoGastoId: 1, TipoGastoGrupoId: 2, RegistroDiarioCajaMonto: 90000, DiferenciaCierre: null };
+    const c = {
+      CierreId: 120,
+      CorreccionCajaEntidad: "REGISTRO",
+      CorreccionCajaAccion: "EDITAR",
+      CorreccionCajaEntidadId: 120,
+      CorreccionCajaAntes: { ...cierre, RegistroDiarioCajaMonto: 100000 },
+      CorreccionCajaDespues: cierre,
+    };
+    const apertura = { RegistroDiarioCajaId: 100, RegistroDiarioCajaMonto: 0 };
+    // Esperado 90.000; esa noche declaró 100.000 → sobrante 10.000.
+    const r = diferenciaAlCerrar({ cierre, apertura, registros: [mov(101, 1, 90000)], correcciones: [c], turno });
+    assert.equal(r, -10000);
+  });
+});

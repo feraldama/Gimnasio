@@ -219,7 +219,124 @@ function evaluarPermisoCorreccion({
   return { ok: true };
 }
 
+
+// ===== Registro Diario Caja: editar / borrar un movimiento =====
+// La pantalla Registro Diario Caja edita y borra filas sueltas de
+// `registrodiariocaja`. En un turno cerrado eso cambiaba un cierre ya rendido
+// sin dejar rastro. Reglas (models/correccionCaja.model.js lo aplica):
+//   - Apertura y cierre (grupo 2) no se borran; sólo se corrige monto/detalle.
+//   - Ningún movimiento se convierte en apertura/cierre ni al revés.
+//   - Movimientos de una venta o un cobro de gimnasio (VentaId/PagoId) se
+//     corrigen desde Corrección de caja, para que la venta/el cobro queden
+//     iguales que la caja.
+//   - Turno cerrado: sólo monto, detalle y tipo de gasto; caja, usuario y
+//     fecha no (moverían el movimiento a otro turno). Pide motivo y supervisor.
+
+const CAMPOS_REGISTRO = [
+  "CajaId",
+  "RegistroDiarioCajaFecha",
+  "TipoGastoId",
+  "TipoGastoGrupoId",
+  "RegistroDiarioCajaDetalle",
+  "RegistroDiarioCajaMonto",
+  "UsuarioId",
+];
+const CAMPOS_TURNO_CERRADO = new Set([
+  "TipoGastoId",
+  "TipoGastoGrupoId",
+  "RegistroDiarioCajaDetalle",
+  "RegistroDiarioCajaMonto",
+]);
+const NUMERICOS = new Set([
+  "CajaId",
+  "TipoGastoId",
+  "TipoGastoGrupoId",
+  "RegistroDiarioCajaMonto",
+]);
+
+function fechaLocalISO(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Campos que de verdad cambian. La pantalla manda la fila entera aunque no se
+ * haya tocado nada, así que se compara contra lo guardado.
+ */
+function cambiosRegistro(reg, body = {}) {
+  const cambios = {};
+  for (const campo of CAMPOS_REGISTRO) {
+    const nuevo = body[campo];
+    if (nuevo === undefined || nuevo === null) continue;
+    const actual = reg[campo];
+    let distinto;
+    if (NUMERICOS.has(campo)) {
+      distinto = Number(nuevo) !== Number(actual);
+    } else if (campo === "RegistroDiarioCajaFecha") {
+      const a = new Date(actual);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(nuevo).trim())) {
+        distinto = String(nuevo).trim() !== fechaLocalISO(a);
+      } else {
+        const n = new Date(nuevo);
+        distinto = !isNaN(n.getTime()) && n.getTime() !== a.getTime();
+      }
+    } else {
+      distinto = String(nuevo) !== String(actual ?? "");
+    }
+    if (distinto) cambios[campo] = nuevo;
+  }
+  return cambios;
+}
+
+/**
+ * @param {"EDITAR"|"ELIMINAR"} accion
+ * @returns {{status:number, message:string, code?:string} | null}  null = permitido
+ */
+function validarCambioRegistro({ reg, accion, cambios = {}, turnoCerrado }) {
+  const esCaja = Number(reg.TipoGastoGrupoId) === 2;
+  if (reg.VentaId != null || reg.PagoId != null) {
+    return {
+      status: 409,
+      message:
+        reg.PagoId != null
+          ? "Este movimiento es de un cobro de gimnasio: corregilo desde Corrección de caja, así el cobro queda igual que la caja."
+          : `Este movimiento es de la venta N° ${reg.VentaId}: corregilo desde Corrección de caja, así la venta queda igual que la caja.`,
+    };
+  }
+  if (accion === "ELIMINAR" && esCaja) {
+    return {
+      status: 409,
+      message:
+        "No se puede eliminar una apertura o un cierre de caja: el turno quedaría sin abrir o sin cerrar.",
+    };
+  }
+  if (accion === "EDITAR") {
+    const tocaTipo = "TipoGastoId" in cambios || "TipoGastoGrupoId" in cambios;
+    const grupoNuevo = Number(cambios.TipoGastoGrupoId ?? reg.TipoGastoGrupoId);
+    if (esCaja && tocaTipo) {
+      return { status: 409, message: "Una apertura o un cierre de caja no puede cambiar de tipo." };
+    }
+    if (!esCaja && grupoNuevo === 2) {
+      return { status: 409, message: "Un movimiento no se puede convertir en apertura o cierre de caja." };
+    }
+    if (turnoCerrado) {
+      const prohibidos = Object.keys(cambios).filter((c) => !CAMPOS_TURNO_CERRADO.has(c));
+      if (prohibidos.length) {
+        return {
+          status: 409,
+          message:
+            "En un turno cerrado no se puede cambiar la caja, el usuario ni la fecha del movimiento: lo pasaría a otro turno.",
+        };
+      }
+    }
+  }
+  return null;
+}
+
 module.exports = {
+  CAMPOS_REGISTRO,
+  cambiosRegistro,
+  validarCambioRegistro,
   MEDIOS,
   esGrupoEfectivo,
   medioDeGrupo,

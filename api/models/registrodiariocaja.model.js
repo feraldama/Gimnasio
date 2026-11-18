@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { normalizeRegistroFecha } = require("../utils/registroFecha");
 const {
   TIPO_GASTO_APERTURA,
   TIPO_GASTO_CIERRE,
@@ -84,25 +85,6 @@ function buildRegistroFiltersWhere(filters = {}) {
   return { conditions, params };
 }
 
-function normalizeRegistroFecha(value) {
-  if (!value) return new Date();
-  const str = String(value).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const now = new Date();
-    const [y, m, d] = str.split("-").map(Number);
-    return new Date(
-      y,
-      m - 1,
-      d,
-      now.getHours(),
-      now.getMinutes(),
-      now.getSeconds(),
-      now.getMilliseconds()
-    );
-  }
-  const d = value instanceof Date ? value : new Date(value);
-  return isNaN(d.getTime()) ? new Date() : d;
-}
 
 const RegistroDiarioCaja = {
   getAll: () => {
@@ -345,72 +327,8 @@ const RegistroDiarioCaja = {
     });
   },
 
-  update: (id, registroData) => {
-    return new Promise((resolve, reject) => {
-      // Construir la consulta dinámicamente
-      let updateFields = [];
-      let values = [];
-
-      const camposActualizables = [
-        "CajaId",
-        "RegistroDiarioCajaFecha",
-        "TipoGastoId",
-        "TipoGastoGrupoId",
-        "RegistroDiarioCajaDetalle",
-        "RegistroDiarioCajaMonto",
-        "UsuarioId",
-      ];
-
-      camposActualizables.forEach((campo) => {
-        if (registroData[campo] !== undefined) {
-          updateFields.push(`${campo} = ?`);
-          const valor =
-            campo === "RegistroDiarioCajaFecha"
-              ? normalizeRegistroFecha(registroData[campo])
-              : registroData[campo];
-          values.push(valor);
-        }
-      });
-
-      if (updateFields.length === 0) {
-        return resolve(null); // No hay campos para actualizar
-      }
-
-      values.push(id);
-
-      const query = `
-        UPDATE registrodiariocaja 
-        SET ${updateFields.join(", ")}
-        WHERE RegistroDiarioCajaId = ?
-      `;
-
-      db.query(query, values, (err, result) => {
-        if (err) return reject(err);
-
-        if (result.affectedRows === 0) {
-          return resolve(null); // No se encontró el registro
-        }
-
-        // Obtener el registro actualizado
-        RegistroDiarioCaja.getById(id)
-          .then((registro) => resolve(registro))
-          .catch((error) => reject(error));
-      });
-    });
-  },
-
-  delete: (id) => {
-    return new Promise((resolve, reject) => {
-      db.query(
-        "DELETE FROM registrodiariocaja WHERE RegistroDiarioCajaId = ?",
-        [id],
-        (err, result) => {
-          if (err) return reject(err);
-          resolve(result.affectedRows > 0);
-        }
-      );
-    });
-  },
+  // Editar y borrar movimientos: models/correccionCaja.model.js
+  // (editarRegistroTx / eliminarRegistroTx), con las reglas de turno cerrado.
 
   /**
    * Ejecuta la apertura o el cierre de caja en UNA transacción.
@@ -442,6 +360,14 @@ const RegistroDiarioCaja = {
     const conn = await db.promise().getConnection();
     try {
       await conn.beginTransaction();
+
+      // Bloquea la caja hasta el commit: una corrección del turno abierto
+      // (models/correccionCaja.model.js, bloquearCajas) espera a que termine
+      // el cierre y recién ahí ve el turno cerrado. Sin esto podía sumar su
+      // ajuste al cajón después de ponerlo en 0.
+      await conn.query("SELECT CajaId FROM caja WHERE CajaId = ? FOR UPDATE", [
+        cajaId,
+      ]);
 
       // El registro va primero en las dos ramas: es el rastro contable y lo
       // que define el estado de la caja.

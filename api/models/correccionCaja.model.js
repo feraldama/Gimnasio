@@ -20,14 +20,33 @@ const {
   deltaEfectivo,
   esGrupoEfectivo,
   medioDeGrupo,
+  cambiosRegistro,
+  validarCambioRegistro,
 } = require("../utils/correccionCaja");
+const { normalizeRegistroFecha } = require("../utils/registroFecha");
 const { turnoDeMovimiento, turnoDeApertura } = require("../utils/turnoCaja");
 const { confirmarVentaTx, restituirStockVentaTx } = require("./ventaTx");
 
-function errorNegocio(status, message) {
+function errorNegocio(status, message, code) {
   const e = new Error(message);
   e.status = status;
+  if (code) e.code = code;
   return e;
+}
+
+/**
+ * Bloquea las filas de `caja` hasta el commit. El cierre de caja
+ * (registrodiariocaja.model.aperturaCierreTransaccional) bloquea la misma
+ * fila, así una corrección y un cierre de la misma caja no se pisan: sin esto
+ * la corrección podía ver el turno abierto, el cierre ponía el cajón en 0 y
+ * después la corrección le sumaba el ajuste al turno siguiente.
+ * Siempre en orden de CajaId para que dos transacciones no se traben.
+ */
+async function bloquearCajas(conn, cajaIds) {
+  const ids = [...new Set(cajaIds.filter((x) => x != null).map(Number))].sort((a, b) => a - b);
+  for (const id of ids) {
+    await conn.query("SELECT CajaId FROM caja WHERE CajaId = ? FOR UPDATE", [id]);
+  }
 }
 
 /** Aplica la decisión de `autorizar(turno)`; sin callback no se restringe. */
@@ -88,6 +107,7 @@ async function cambiarMedioTx(conn, { registroId, medio, motivo, usuarioId, auto
     );
   }
 
+  await bloquearCajas(conn, [reg.CajaId]);
   const turno = await turnoDeMovimiento(conn, reg);
   exigir(autorizar, turno);
 
@@ -216,6 +236,7 @@ async function anularVentaTx(conn, { ventaId, motivo, usuarioId, autorizar }) {
     [ventaId, ...detalles]
   );
 
+  await bloquearCajas(conn, movs.map((m) => m.CajaId));
   const turnos = [];
   for (const m of movs) {
     const t = await turnoDeMovimiento(conn, m);
@@ -298,6 +319,7 @@ async function anularPagoVinculadoTx(conn, { pagoId, motivo, usuarioId, autoriza
   );
   if (!movs.length) return null;
 
+  await bloquearCajas(conn, movs.map((m) => m.CajaId));
   const turnos = [];
   for (const m of movs) {
     const t = await turnoDeMovimiento(conn, m);
@@ -402,7 +424,113 @@ async function cargarVentaEnTurnoTx(
   return { correccionId, turno, venta: r };
 }
 
+/**
+ * Prepara la edición/borrado de un movimiento desde Registro Diario Caja:
+ * bloquea la fila y la caja, valida las reglas (utils/correccionCaja
+ * validarCambioRegistro) y, si el turno está cerrado, exige motivo y permiso
+ * de supervisor dentro del plazo. Los turnos abiertos y los movimientos fuera
+ * de turno siguen como antes (sin motivo).
+ */
+async function prepararCambioRegistro(conn, { registroId, accion, body, motivo, autorizar }) {
+  const [regs] = await conn.query(
+    "SELECT * FROM registrodiariocaja WHERE RegistroDiarioCajaId = ? FOR UPDATE",
+    [registroId]
+  );
+  const reg = regs[0];
+  if (!reg) throw errorNegocio(404, "Registro no encontrado");
+  await bloquearCajas(conn, [reg.CajaId]);
+
+  const turno = await turnoDeMovimiento(conn, reg);
+  const turnoCerrado = !turno.fueraDeTurno && !turno.abierto && turno.aperturaId != null;
+  const cambios = accion === "EDITAR" ? cambiosRegistro(reg, body) : {};
+
+  const error = validarCambioRegistro({ reg, accion, cambios, turnoCerrado });
+  if (error) throw errorNegocio(error.status, error.message);
+
+  const sinCambios = accion === "EDITAR" && Object.keys(cambios).length === 0;
+  if (turnoCerrado && !sinCambios) {
+    exigir(autorizar, turno);
+    if (!motivo) {
+      throw errorNegocio(
+        409,
+        "El movimiento es de un turno ya cerrado: indicá el motivo del cambio.",
+        "MOTIVO_REQUERIDO"
+      );
+    }
+  }
+  return { reg, turno, turnoCerrado, cambios, sinCambios };
+}
+
+/** Edita un movimiento (Registro Diario Caja). Devuelve la fila resultante. */
+async function editarRegistroTx(conn, { registroId, body, motivo, usuarioId, autorizar }) {
+  const { reg, turno, turnoCerrado, cambios, sinCambios } = await prepararCambioRegistro(conn, {
+    registroId,
+    accion: "EDITAR",
+    body,
+    motivo,
+    autorizar,
+  });
+  if (sinCambios) return { registro: reg, correccionId: null };
+
+  const campos = Object.keys(cambios);
+  const valores = campos.map((c) =>
+    c === "RegistroDiarioCajaFecha" ? normalizeRegistroFecha(cambios[c]) : cambios[c]
+  );
+  await conn.query(
+    `UPDATE registrodiariocaja SET ${campos.map((c) => `${c} = ?`).join(", ")}
+     WHERE RegistroDiarioCajaId = ?`,
+    [...valores, registroId]
+  );
+  const [rows] = await conn.query(
+    "SELECT * FROM registrodiariocaja WHERE RegistroDiarioCajaId = ?",
+    [registroId]
+  );
+
+  let correccionId = null;
+  if (turnoCerrado) {
+    correccionId = await registrarCorreccion(conn, {
+      usuarioId,
+      entidad: "REGISTRO",
+      entidadId: registroId,
+      accion: "EDITAR",
+      turno,
+      motivo,
+      antes: reg,
+      despues: rows[0],
+    });
+  }
+  return { registro: rows[0], correccionId };
+}
+
+/** Borra un movimiento (Registro Diario Caja). */
+async function eliminarRegistroTx(conn, { registroId, motivo, usuarioId, autorizar }) {
+  const { reg, turno, turnoCerrado } = await prepararCambioRegistro(conn, {
+    registroId,
+    accion: "ELIMINAR",
+    motivo,
+    autorizar,
+  });
+  await conn.query("DELETE FROM registrodiariocaja WHERE RegistroDiarioCajaId = ?", [registroId]);
+  let correccionId = null;
+  if (turnoCerrado) {
+    correccionId = await registrarCorreccion(conn, {
+      usuarioId,
+      entidad: "REGISTRO",
+      entidadId: registroId,
+      accion: "ELIMINAR",
+      turno,
+      motivo,
+      antes: reg,
+      despues: null,
+    });
+  }
+  return { correccionId };
+}
+
 module.exports = {
+  editarRegistroTx,
+  eliminarRegistroTx,
+  bloquearCajas,
   cambiarMedioTx,
   anularVentaTx,
   anularPagoVinculadoTx,

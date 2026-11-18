@@ -156,8 +156,28 @@ export default function MovementsPage() {
     }
   };
 
+  // Un movimiento de un turno ya cerrado sólo se cambia con motivo (queda en
+  // el historial de Corrección de caja). La API avisa con MOTIVO_REQUERIDO.
+  const pedirMotivo = async (accion: string): Promise<string | null> => {
+    const r = await Swal.fire({
+      title: "Turno ya cerrado",
+      text: `Este movimiento es de un turno de caja ya cerrado. Indicá por qué lo ${accion}: queda registrado en el historial de correcciones.`,
+      input: "text",
+      inputPlaceholder: "Motivo (mínimo 5 caracteres)",
+      showCancelButton: true,
+      confirmButtonText: "Confirmar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#2563eb",
+      inputValidator: (v) =>
+        !v || v.trim().length < 5 ? "Escribí un motivo de al menos 5 caracteres" : null,
+    });
+    return r.isConfirmed ? String(r.value).trim() : null;
+  };
+  const esMotivoRequerido = (e: unknown) =>
+    (e as { code?: string })?.code === "MOTIVO_REQUERIDO";
+
   const handleDelete = async (movimiento: Movimiento) => {
-    Swal.fire({
+    const result = await Swal.fire({
       title: "¿Estás seguro?",
       text: "¡No podrás revertir esto!",
       icon: "warning",
@@ -166,26 +186,31 @@ export default function MovementsPage() {
       cancelButtonColor: "#d33",
       confirmButtonText: "Sí, eliminar!",
       cancelButtonText: "Cancelar",
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          await deleteRegistroDiarioCaja(movimiento.RegistroDiarioCajaId);
-          Swal.fire({
-            icon: "success",
-            title: "Registro eliminado exitosamente",
-          });
-          fetchMovimientos();
-        } catch (error: unknown) {
-          const err = error as { message?: string };
-          const msg = err?.message || "No se pudo eliminar el registro";
-          Swal.fire({
-            icon: "warning",
-            title: "No permitido",
-            text: msg,
-          });
-        }
-      }
     });
+    if (!result.isConfirmed) return;
+    try {
+      try {
+        await deleteRegistroDiarioCaja(movimiento.RegistroDiarioCajaId);
+      } catch (e) {
+        if (!esMotivoRequerido(e)) throw e;
+        const motivo = await pedirMotivo("eliminás");
+        if (!motivo) return;
+        await deleteRegistroDiarioCaja(movimiento.RegistroDiarioCajaId, motivo);
+      }
+      Swal.fire({
+        icon: "success",
+        title: "Registro eliminado exitosamente",
+      });
+      fetchMovimientos();
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      const msg = err?.message || "No se pudo eliminar el registro";
+      Swal.fire({
+        icon: "warning",
+        title: "No permitido",
+        text: msg,
+      });
+    }
   };
 
   const handleCreate = () => {
@@ -202,10 +227,15 @@ export default function MovementsPage() {
     let mensaje = "";
     try {
       if (currentMovement) {
-        await updateRegistroDiarioCaja(
-          currentMovement.RegistroDiarioCajaId,
-          movementData
-        );
+        const id = currentMovement.RegistroDiarioCajaId;
+        try {
+          await updateRegistroDiarioCaja(id, { ...movementData });
+        } catch (e) {
+          if (!esMotivoRequerido(e)) throw e;
+          const motivo = await pedirMotivo("modificás");
+          if (!motivo) return;
+          await updateRegistroDiarioCaja(id, { ...movementData, motivo });
+        }
         mensaje = "Registro actualizado exitosamente";
       } else {
         const response = await createRegistroDiarioCaja(movementData);
@@ -222,11 +252,13 @@ export default function MovementsPage() {
       });
       fetchMovimientos();
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("Error desconocido");
-      }
+      // La API devuelve { message } (no un Error). Aviso y no pantalla de
+      // error: el listado sigue siendo válido.
+      Swal.fire({
+        icon: "warning",
+        title: "No se pudo guardar",
+        text: (error as { message?: string })?.message || "Error desconocido",
+      });
     }
   };
 

@@ -185,3 +185,59 @@ describe("evaluarPermisoCorreccion", () => {
     assert.equal(r.status, 409);
   });
 });
+
+// ===== Registro Diario Caja: editar / borrar =====
+const { cambiosRegistro, validarCambioRegistro } = require("../utils/correccionCaja");
+
+describe("cambiosRegistro", () => {
+  const reg = {
+    CajaId: 4,
+    UsuarioId: "gimnasio",
+    TipoGastoId: 1,
+    TipoGastoGrupoId: 7,
+    RegistroDiarioCajaMonto: 15000,
+    RegistroDiarioCajaDetalle: "Hielo",
+    RegistroDiarioCajaFecha: new Date(2026, 10, 17, 9, 30),
+  };
+  test("la fila reenviada tal cual no tiene cambios", () => {
+    const body = { ...reg, CajaId: "4", RegistroDiarioCajaMonto: "15000", RegistroDiarioCajaFecha: reg.RegistroDiarioCajaFecha.toISOString(), CajaDescripcion: "X" };
+    assert.deepEqual(cambiosRegistro(reg, body), {});
+  });
+  test("detecta monto y fecha de otro día", () => {
+    assert.deepEqual(cambiosRegistro(reg, { RegistroDiarioCajaMonto: 12000, RegistroDiarioCajaFecha: "2026-11-18" }), {
+      RegistroDiarioCajaMonto: 12000,
+      RegistroDiarioCajaFecha: "2026-11-18",
+    });
+  });
+  test("misma fecha en formato YYYY-MM-DD no es cambio", () => {
+    assert.deepEqual(cambiosRegistro(reg, { RegistroDiarioCajaFecha: "2026-11-17" }), {});
+  });
+});
+
+describe("validarCambioRegistro", () => {
+  const egreso = { TipoGastoId: 1, TipoGastoGrupoId: 7, VentaId: null, PagoId: null };
+  test("movimientos de venta o cobro van por Corrección de caja", () => {
+    assert.match(validarCambioRegistro({ reg: { ...egreso, VentaId: 9 }, accion: "ELIMINAR" }).message, /venta N° 9/);
+    assert.match(validarCambioRegistro({ reg: { ...egreso, PagoId: 3 }, accion: "EDITAR" }).message, /cobro de gimnasio/);
+  });
+  test("apertura y cierre no se borran ni cambian de tipo", () => {
+    const cierre = { TipoGastoId: 1, TipoGastoGrupoId: 2 };
+    assert.equal(validarCambioRegistro({ reg: cierre, accion: "ELIMINAR" }).status, 409);
+    assert.equal(validarCambioRegistro({ reg: cierre, accion: "EDITAR", cambios: { TipoGastoId: 2 } }).status, 409);
+    assert.equal(validarCambioRegistro({ reg: cierre, accion: "EDITAR", cambios: { RegistroDiarioCajaMonto: 1 } }), null);
+  });
+  test("un movimiento no se convierte en apertura/cierre", () => {
+    assert.equal(validarCambioRegistro({ reg: egreso, accion: "EDITAR", cambios: { TipoGastoGrupoId: 2 } }).status, 409);
+  });
+  test("turno cerrado: no se cambia caja, usuario ni fecha", () => {
+    assert.match(
+      validarCambioRegistro({ reg: egreso, accion: "EDITAR", cambios: { CajaId: 5 }, turnoCerrado: true }).message,
+      /otro turno/
+    );
+    assert.equal(validarCambioRegistro({ reg: egreso, accion: "EDITAR", cambios: { CajaId: 5 }, turnoCerrado: false }), null);
+    assert.equal(
+      validarCambioRegistro({ reg: egreso, accion: "EDITAR", cambios: { RegistroDiarioCajaMonto: 1 }, turnoCerrado: true }),
+      null
+    );
+  });
+});

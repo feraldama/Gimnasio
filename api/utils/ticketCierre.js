@@ -75,6 +75,20 @@ function ajustePorCorreccionesPosteriores(correcciones, registros, turno) {
         if (!perteneceAlTurno(m, turno.aperturaId, turno.cierreId)) continue;
         ajuste -= efectoEnEsperado(m.TipoGastoId, m.TipoGastoGrupoId, m.RegistroDiarioCajaMonto);
       }
+    } else if (c.CorreccionCajaEntidad === "REGISTRO" && antes) {
+      // Editado/borrado desde Registro Diario Caja.
+      if (antes.AperturaRef != null) continue;
+      const efectoAntes = efectoEnEsperado(
+        antes.TipoGastoId,
+        antes.TipoGastoGrupoId,
+        antes.RegistroDiarioCajaMonto
+      );
+      if (accion === "ELIMINAR") ajuste -= efectoAntes;
+      else if (accion === "EDITAR" && despues) {
+        ajuste +=
+          efectoEnEsperado(despues.TipoGastoId, despues.TipoGastoGrupoId, despues.RegistroDiarioCajaMonto) -
+          efectoAntes;
+      }
     } else if (accion === "CARGAR") {
       const ventaId = Number(c.CorreccionCajaEntidadId);
       for (const r of registros || []) {
@@ -105,9 +119,23 @@ function esperadoDelTurno(registros, aperturaMonto) {
  */
 function diferenciaAlCerrar({ cierre, apertura, registros, correcciones, turno }) {
   if (cierre?.DiferenciaCierre != null) return Number(cierre.DiferenciaCierre);
-  const esperadoActual = esperadoDelTurno(registros, apertura?.RegistroDiarioCajaMonto);
+  // Si después se corrigió el monto de la apertura o del cierre desde
+  // Registro Diario Caja, vale el que tenía antes de la primera corrección.
+  const montoOriginal = (fila) => {
+    if (!fila) return 0;
+    const primera = (correcciones || []).find(
+      (c) =>
+        c.CierreId != null &&
+        c.CorreccionCajaEntidad === "REGISTRO" &&
+        c.CorreccionCajaAccion === "EDITAR" &&
+        Number(c.CorreccionCajaEntidadId) === Number(fila.RegistroDiarioCajaId)
+    );
+    const antes = primera ? parseJson(primera.CorreccionCajaAntes) : null;
+    return Number(antes ? antes.RegistroDiarioCajaMonto : fila.RegistroDiarioCajaMonto) || 0;
+  };
+  const esperadoActual = esperadoDelTurno(registros, 0);
   const { ajuste } = ajustePorCorreccionesPosteriores(correcciones, registros, turno);
-  return esperadoActual - ajuste - (Number(cierre?.RegistroDiarioCajaMonto) || 0);
+  return montoOriginal(apertura) + esperadoActual - ajuste - montoOriginal(cierre);
 }
 
 module.exports = {

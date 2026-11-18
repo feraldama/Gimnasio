@@ -1,4 +1,7 @@
 const RegistroDiarioCaja = require("../models/registrodiariocaja.model");
+const Correccion = require("../models/correccionCaja.model");
+const { contexto } = require("../utils/contextoCorreccion");
+const { validarMotivo } = require("../utils/correccionCaja");
 const { sendError } = require("../utils/errors");
 const {
   evaluarAperturaCierre,
@@ -149,44 +152,83 @@ exports.create = async (req, res) => {
   }
 };
 
+// Editar / eliminar un movimiento. En un turno ya cerrado pide motivo y
+// permiso de supervisor (CORRECCIONCAJA), y queda en el historial de
+// correcciones; los movimientos de ventas y cobros van por Corrección de caja.
+// Reglas en utils/correccionCaja.js (validarCambioRegistro).
+async function enTransaccion(fn) {
+  const conn = await db.promise().getConnection();
+  try {
+    await conn.beginTransaction();
+    const r = await fn(conn);
+    await conn.commit();
+    return r;
+  } catch (e) {
+    await conn.rollback().catch(() => {});
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+function motivoDe(req) {
+  const crudo = req.body?.motivo;
+  if (crudo == null || String(crudo).trim() === "") return { motivo: null };
+  return validarMotivo(crudo);
+}
+
+function responderErrorCambio(res, error) {
+  if (error?.status) {
+    return res
+      .status(error.status)
+      .json({ message: error.message, ...(error.code ? { code: error.code } : {}) });
+  }
+  console.error(error);
+  return sendError(res, error, 500);
+}
+
 // Actualizar un registro
 exports.update = async (req, res) => {
+  const m = motivoDe(req);
+  if (m.error) return res.status(400).json({ message: m.error });
   try {
-    const registro = await RegistroDiarioCaja.update(req.params.id, req.body);
-    if (!registro) {
-      return res.status(404).json({ message: "Registro no encontrado" });
-    }
+    const r = await enTransaccion(async (conn) => {
+      const ctx = await contexto(conn, req.user);
+      return Correccion.editarRegistroTx(conn, {
+        registroId: Number(req.params.id),
+        body: req.body || {},
+        motivo: m.motivo,
+        usuarioId: req.user.id,
+        autorizar: ctx.autorizar,
+      });
+    });
     res.json({
       message: "Registro actualizado exitosamente",
-      data: registro,
+      data: r.registro,
+      correccionId: r.correccionId,
     });
   } catch (error) {
-    console.error(error);
-    sendError(res, error, 400);
+    responderErrorCambio(res, error);
   }
 };
 
 // Eliminar un registro
 exports.delete = async (req, res) => {
+  const m = motivoDe(req);
+  if (m.error) return res.status(400).json({ message: m.error });
   try {
-    const success = await RegistroDiarioCaja.delete(req.params.id);
-    if (!success) {
-      return res.status(404).json({ message: "Registro no encontrado" });
-    }
-    res.json({ message: "Registro eliminado exitosamente" });
-  } catch (error) {
-    console.error(error);
-    if (
-      error &&
-      error.message &&
-      error.message.includes("a foreign key constraint fails")
-    ) {
-      return res.status(400).json({
-        message:
-          "No se puede eliminar el registro porque tiene movimientos asociados.",
+    const r = await enTransaccion(async (conn) => {
+      const ctx = await contexto(conn, req.user);
+      return Correccion.eliminarRegistroTx(conn, {
+        registroId: Number(req.params.id),
+        motivo: m.motivo,
+        usuarioId: req.user.id,
+        autorizar: ctx.autorizar,
       });
-    }
-    sendError(res, error, 500);
+    });
+    res.json({ message: "Registro eliminado exitosamente", correccionId: r.correccionId });
+  } catch (error) {
+    responderErrorCambio(res, error);
   }
 };
 

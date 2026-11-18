@@ -170,9 +170,16 @@ export const updateRegistroDiarioCaja = async (
   }
 };
 
-export const deleteRegistroDiarioCaja = async (id: string | number) => {
+// `motivo`: obligatorio si el movimiento es de un turno ya cerrado (la API
+// responde 409 con code "MOTIVO_REQUERIDO" si falta).
+export const deleteRegistroDiarioCaja = async (
+  id: string | number,
+  motivo?: string
+) => {
   try {
-    const response = await api.delete(`/registrodiariocaja/${id}`);
+    const response = await api.delete(`/registrodiariocaja/${id}`, {
+      data: motivo ? { motivo } : undefined,
+    });
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;

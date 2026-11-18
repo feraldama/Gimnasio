@@ -27,6 +27,7 @@ import {
   cargarVentaFaltante,
   getTurnoParaCorreccion,
   getTurnosParaCorreccion,
+  type CorreccionRegistrada,
   type Medio,
   type RegistroTurno,
   type TurnoDetalle,
@@ -493,7 +494,7 @@ function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: 
                   {formatDateLocal(c.CorreccionCajaFecha)} {hora(c.CorreccionCajaFecha)}
                 </span>{" "}
                 · <strong>{c.UsuarioNombre || c.UsuarioId}</strong> ·{" "}
-                {textoCorreccion(c.CorreccionCajaAccion, c.CorreccionCajaEntidad, c.CorreccionCajaEntidadId)}
+                {textoCorreccion(c)}
                 {" — "}
                 <span className="italic text-text-muted">{c.CorreccionCajaMotivo}</span>
               </li>
@@ -530,11 +531,29 @@ function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: 
   );
 }
 
-function textoCorreccion(accion: string, entidad: string, id: number) {
-  const que = entidad === "PAGO" ? `cobro #${id}` : `venta N° ${id}`;
-  if (accion === "METODO") return `cambió el medio del ${que}`;
-  if (accion === "ANULAR") return `anuló la ${que}`;
-  if (accion === "CARGAR") return `cargó la ${que}`;
+function textoCorreccion(c: CorreccionRegistrada) {
+  const accion = c.CorreccionCajaAccion;
+  const id = c.CorreccionCajaEntidadId;
+  if (c.CorreccionCajaEntidad === "REGISTRO") {
+    // Editado/borrado desde Registro Diario Caja.
+    const antes = (c.CorreccionCajaAntes || {}) as Record<string, unknown>;
+    const despues = (c.CorreccionCajaDespues || {}) as Record<string, unknown>;
+    const det = String(antes.RegistroDiarioCajaDetalle || `movimiento #${id}`);
+    const montoAntes = Number(antes.RegistroDiarioCajaMonto) || 0;
+    if (accion === "ELIMINAR") {
+      return `eliminó "${det}" (Gs. ${formatMiles(montoAntes)}) desde Registro Diario Caja`;
+    }
+    const montoDespues = Number(despues.RegistroDiarioCajaMonto);
+    const monto =
+      !isNaN(montoDespues) && montoDespues !== montoAntes
+        ? ` de Gs. ${formatMiles(montoAntes)} a Gs. ${formatMiles(montoDespues)}`
+        : "";
+    return `editó "${det}"${monto} desde Registro Diario Caja`;
+  }
+  const que = c.CorreccionCajaEntidad === "PAGO" ? `el cobro #${id}` : `la venta N° ${id}`;
+  if (accion === "METODO") return `cambió el medio de ${que}`;
+  if (accion === "ANULAR") return `anuló ${que}`;
+  if (accion === "CARGAR") return `cargó ${que}`;
   return `${accion} ${que}`;
 }
 
