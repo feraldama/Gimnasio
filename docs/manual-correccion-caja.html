@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual: Ventas del día y Corrección de caja</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --text: #1f2933;
+    --muted: #5b6672;
+    --border: #dfe3e8;
+    --brand: #1d4ed8;
+    --brand-soft: #e8efff;
+    --ok: #15803d;
+    --ok-soft: #e7f6ec;
+    --warn: #b45309;
+    --warn-soft: #fdf3e2;
+    --danger: #b91c1c;
+    --danger-soft: #fdecec;
+    --info: #0369a1;
+    --info-soft: #e5f3fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11151a;
+      --surface: #1a2027;
+      --text: #e6e9ed;
+      --muted: #a1abb6;
+      --border: #2e3640;
+      --brand: #8ab0ff;
+      --brand-soft: #1f2b45;
+      --ok: #6fd394;
+      --ok-soft: #173326;
+      --warn: #f4b55e;
+      --warn-soft: #3a2b15;
+      --danger: #f48b8b;
+      --danger-soft: #3d1c1c;
+      --info: #79c4ef;
+      --info-soft: #15303f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0; }
+  nav.toc {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 32px;
+  }
+  nav.toc strong { display: block; margin-bottom: 6px; }
+  nav.toc ol { margin: 0; padding-left: 20px; }
+  nav.toc a { color: var(--brand); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px 24px 12px; margin-bottom: 24px;
+  }
+  h2 { font-size: 1.35rem; margin: 0 0 12px; }
+  h3 { font-size: 1.05rem; margin: 20px 0 8px; }
+  p { margin: 0 0 12px; }
+  ol, ul { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .table-wrap { overflow-x: auto; margin: 0 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ui { font-weight: 600; white-space: nowrap; }
+  .chip {
+    display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 600; white-space: nowrap;
+  }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.danger { background: var(--danger-soft); color: var(--danger); }
+  .chip.info { background: var(--info-soft); color: var(--info); }
+  .chip.brand { background: var(--brand-soft); color: var(--brand); }
+  .note {
+    border-left: 4px solid var(--brand); background: var(--brand-soft);
+    padding: 10px 14px; border-radius: 6px; margin: 0 0 16px;
+  }
+  .note.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .example {
+    border: 1px dashed var(--border); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px;
+  }
+  .example strong { display: block; margin-bottom: 4px; }
+  dl { margin: 0 0 12px; }
+  dt { font-weight: 600; margin-top: 14px; }
+  dd { margin: 4px 0 0; color: var(--text); }
+  footer { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 32px; }
+  @media print {
+    body { background: #fff; color: #000; }
+    section, nav.toc { border-color: #ccc; break-inside: avoid; }
+    nav.toc { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Manual: Ventas del día y Corrección de caja</h1>
+    <p class="sub">Para cajeros y supervisores · Noviembre 2026</p>
+  </header>
+
+  <nav class="toc" aria-label="Contenido">
+    <strong>Contenido</strong>
+    <ol>
+      <li><a href="#para-que">Para qué sirve</a></li>
+      <li><a href="#ventas-dia">Ventas y cobros del día</a></li>
+      <li><a href="#correccion">Corrección de caja: quién puede y cómo entrar</a></li>
+      <li><a href="#medio">Cambiar el medio de cobro</a></li>
+      <li><a href="#anular">Anular una venta duplicada</a></li>
+      <li><a href="#cargar">Cargar una venta que faltó</a></li>
+      <li><a href="#historial">Historial y reportes</a></li>
+      <li><a href="#faq">Preguntas frecuentes</a></li>
+      <li><a href="#permisos">Para el administrador: permisos</a></li>
+    </ol>
+  </nav>
+
+  <section id="para-que">
+    <h2>1. Para qué sirve</h2>
+    <p>El sistema tiene dos pantallas nuevas para que el cierre de caja cuadre: una para <strong>no equivocarse</strong> al cargar y otra para <strong>corregir</strong> cuando el error ya pasó.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Pantalla</th><th>Dónde está en el menú</th><th>Para qué</th><th>Quién la usa</th></tr></thead>
+        <tbody>
+          <tr><td class="ui">Ventas y cobros del día</td><td>Arriba, debajo de Apertura/Cierre de Caja</td><td>Ver si algo ya se cargó antes de cargarlo de nuevo</td><td>Cajeros</td></tr>
+          <tr><td class="ui">Corrección de caja</td><td>Caja → Corrección de caja</td><td>Corregir una venta o un cobro mal cargado, sobre su turno original</td><td>Supervisor; el cajero sólo en su turno abierto</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">La idea central: cuando se corrige algo de ayer, <strong>se arregla el cierre de ayer</strong>. La caja abierta hoy no cambia.</div>
+  </section>
+
+  <section id="ventas-dia">
+    <h2>2. Ventas y cobros del día</h2>
+    <p>Antes de cargar una venta o un cobro que no estás seguro si ya se cargó, buscalo acá. Muestra lo cargado <strong>hoy en tu local, en todos los turnos</strong>: el turno de la tarde ve lo que cargó la mañana.</p>
+
+    <h3>Cómo buscar algo</h3>
+    <ol>
+      <li>En el menú, entrá a <span class="ui">Ventas y cobros del día</span>.</li>
+      <li>En el buscador escribí parte del nombre: un producto ("monster"), un socio, un cliente, el usuario que cargó o el número de venta. No hace falta poner tildes ni mayúsculas.</li>
+      <li>Mirá las dos listas:
+        <ul>
+          <li><strong>Cantina:</strong> ventas con hora, productos y cantidades, cliente, medio de pago, caja y usuario.</li>
+          <li><strong>Gimnasio:</strong> cobros de planes con socio, plan, medio de pago, caja y usuario.</li>
+        </ul>
+      </li>
+      <li>Si ya aparece, <strong>no lo cargues de nuevo</strong>. Si no aparece, cargalo como siempre.</li>
+    </ol>
+    <p>Usá <span class="ui">Actualizar</span> si la pantalla quedó abierta un rato y querés ver lo último que se cargó.</p>
+
+    <h3>Qué significan las marcas</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Marca</th><th>Qué quiere decir</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip ok">Efectivo</span> <span class="chip info">POS</span> <span class="chip brand">Transferencia</span></td><td>Con qué se cobró. Revisá este dato: es el error más común al cuadrar la caja.</td></tr>
+          <tr><td><span class="chip warn">A crédito</span></td><td>Parte de la venta quedó en la cuenta del cliente.</td></tr>
+          <tr><td><span class="chip danger">Sin caja</span></td><td>Se cobró con la caja cerrada, o es un cobro viejo que el sistema no pudo asociar a su caja. No figura en ningún cierre: avisá al supervisor.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>El cajero sólo ve el día de hoy. El administrador puede elegir otra fecha.</p>
+  </section>
+
+  <section id="correccion">
+    <h2>3. Corrección de caja: quién puede y cómo entrar</h2>
+    <p>Esta pantalla corrige los movimientos <strong>en el mismo turno donde se cargaron</strong>. Así el cierre de ese turno queda bien y no se pasa la diferencia a la caja de hoy.</p>
+
+    <h3>Quién puede corregir qué</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Turno</th><th>Cajero</th><th>Supervisor</th><th>Qué pasa con la plata del cajón</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Abierto</strong> (todavía no se cerró)</td><td>Sí, sólo el suyo</td><td>Sí</td><td>Se ajusta el efectivo esperado del cajón actual</td></tr>
+          <tr><td><strong>Cerrado</strong></td><td>No, sólo lo ve</td><td>Sí, hasta 7 días después del cierre</td><td>No cambia nada: ese cajón ya se rindió y la caja de hoy no se toca</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Cómo elegir el turno</h3>
+    <ol>
+      <li>Entrá a <span class="ui">Caja → Corrección de caja</span>.</li>
+      <li>En <span class="ui">Fecha del cierre</span> elegí el día en que se cerró el turno. Viene puesto ayer.</li>
+      <li>Aparecen los turnos de ese día, con caja, cajero, horario y cómo cerraron:
+        <span class="chip ok">Cuadra</span>
+        <span class="chip danger">Faltante Gs. …</span>
+        <span class="chip warn">Sobrante Gs. …</span>
+        <span class="chip info">Turno abierto</span>
+      </li>
+      <li>Tocá el turno que no cuadró. Abajo se abre su detalle:
+        <ul>
+          <li>Arriba a la derecha, el efectivo <strong>esperado</strong> por el sistema y el <strong>declarado</strong> al cerrar.</li>
+          <li>La lista de movimientos del turno, con botones <span class="ui">Medio</span> y <span class="ui">Anular</span> en los que se pueden corregir.</li>
+        </ul>
+      </li>
+    </ol>
+    <div class="note warn">Si aparece un aviso amarillo y no hay botones, ese turno no lo podés corregir: es un turno cerrado y no sos supervisor, o pasaron más de 7 días del cierre.</div>
+  </section>
+
+  <section id="medio">
+    <h2>4. Cambiar el medio de cobro</h2>
+    <p>Para cuando un cobro se cargó con un medio equivocado. Ejemplo típico: el socio pagó en efectivo y se cargó como transferencia.</p>
+    <ol>
+      <li>En el detalle del turno, buscá el cobro o la venta y tocá <span class="ui">Medio</span>.</li>
+      <li>En <span class="ui">Se cobró con</span> elegí el medio correcto.</li>
+      <li>Escribí el <strong>motivo</strong>. Es obligatorio, por ejemplo: "El socio pagó en efectivo, se cargó como transferencia".</li>
+      <li>Mirá la vista previa abajo del motivo: muestra cómo queda el cierre del turno antes y después del cambio.</li>
+      <li>Tocá <span class="ui">Corregir</span>.</li>
+    </ol>
+    <div class="example">
+      <strong>Ejemplo</strong>
+      Un turno cerró con <span class="chip warn">Sobrante Gs. 150.000</span>. Había un cobro de plan de 150.000 cargado como transferencia que en realidad fue en efectivo. Al cambiarlo a efectivo, el turno pasa a <span class="chip ok">Cuadra</span>.
+    </div>
+    <p>Si el turno sigue abierto, el efectivo esperado del cajón se ajusta: pasar 25.000 de efectivo a transferencia baja lo esperado en 25.000.</p>
+  </section>
+
+  <section id="anular">
+    <h2>5. Anular una venta duplicada</h2>
+    <p>Para cuando la misma venta de cantina se cargó dos veces. Antes de anular, confirmá cuál es la repetida mirando la hora y los productos.</p>
+    <ol>
+      <li>En el detalle del turno, en la venta repetida, tocá <span class="ui">Anular</span>.</li>
+      <li>Revisá los productos y el total que se van a anular.</li>
+      <li>Escribí el motivo, por ejemplo: "Venta duplicada, el Monster se vendió una sola vez".</li>
+      <li>Mirá la vista previa del cierre y tocá <span class="ui">Anular venta</span>.</li>
+    </ol>
+    <p>Al anular, el stock de esos productos vuelve al inventario y la venta sale del cierre de su turno.</p>
+    <div class="note warn">La anulación no se puede deshacer. Si te equivocaste, cargá la venta de nuevo con <a href="#cargar">Cargar una venta que faltó</a>.</div>
+    <p>Los cobros de gimnasio se siguen anulando desde <span class="ui">Gimnasio → Pagos</span>, como siempre. Ahora esa anulación también se aplica en el turno donde se cobró, no en la caja de hoy.</p>
+  </section>
+
+  <section id="cargar">
+    <h2>6. Cargar una venta que faltó</h2>
+    <p>Para cuando se vendió algo y se cobró, pero nunca se cargó. Ejemplo: un Monster vendido a la mañana en efectivo. La plata quedó en el cajón de ese turno, así que la venta se carga en ese turno.</p>
+    <ol>
+      <li>Abrí el turno cerrado donde se hizo la venta y tocá <span class="ui">Cargar venta que faltó</span> (arriba de la lista de movimientos).</li>
+      <li>En <span class="ui">Buscar producto…</span> escribí el nombre y elegí el producto. Podés agregar varios.</li>
+      <li>Ajustá la <strong>cantidad</strong> y, si hace falta, el <strong>total</strong> de cada línea.</li>
+      <li>En <span class="ui">Se cobró con</span> elegí el medio de pago.</li>
+      <li>Escribí el motivo, mirá la vista previa y tocá <span class="ui">Cargar venta</span>.</li>
+    </ol>
+    <p>La venta queda en ese turno, con su caja, su cajero y la fecha y hora del cierre. Descuenta el stock y no mueve la caja de hoy.</p>
+    <div class="note">Si el turno todavía está abierto, no hace falta esta opción: cargá la venta desde Ventas (POS) como siempre.</div>
+  </section>
+
+  <section id="historial">
+    <h2>7. Historial y reportes</h2>
+    <ul>
+      <li>Al pie de cada turno está el <strong>historial de correcciones</strong>: cuándo, quién, qué cambió y el motivo.</li>
+      <li>En la lista de turnos, los que tienen correcciones muestran cuántas, por ejemplo "3 correcciones".</li>
+      <li>Las anulaciones hechas desde Pagos y desde Modificaciones → Ventas también quedan en el historial.</li>
+      <li>El reporte <span class="ui">Reportes → Cierre de caja por rango</span> y el <span class="ui">Resumen por local</span> ya muestran los números corregidos, en el día del turno corregido.</li>
+    </ul>
+    <h3>Reimprimir el ticket de cierre</h3>
+    <p>El botón <span class="ui">Ticket</span> genera el mismo ticket que imprime el cajero al cerrar. Aparece en cada turno cerrado de <span class="ui">Corrección de caja</span> y en cada fila de <span class="ui">Reportes → Cierre de caja por rango</span>.</p>
+    <ul>
+      <li>La fecha, la hora y el usuario son los del cierre real, no los de quien lo reimprime.</li>
+      <li>Los números son los de ahora, con las correcciones aplicadas.</li>
+      <li>Si el turno se corrigió después del cierre, al pie dice cuántas correcciones tuvo y el sobrante o faltante que tenía <strong>al cerrar</strong>, para comparar con el ticket de esa noche.</li>
+      <li>Al pie dice <strong>REIMPRESIÓN</strong>, quién lo imprimió y cuándo, para no confundirlo con el original.</li>
+      <li>Un turno que sigue abierto no tiene ticket todavía.</li>
+    </ul>
+  </section>
+
+  <section id="faq">
+    <h2>8. Preguntas frecuentes</h2>
+    <dl>
+      <dt>¿Corregir algo de ayer cambia la caja que tengo abierta hoy?</dt>
+      <dd>No. Sólo cambia el cierre del turno corregido. La caja de hoy se ajusta únicamente si corregís un movimiento de tu turno abierto.</dd>
+
+      <dt>Pasaron más de 7 días y necesito corregir un turno.</dt>
+      <dd>El plazo lo cambia el administrador en Configuración, con el valor <span class="ui">CORRECCION_CAJA_DIAS</span>.</dd>
+
+      <dt>Un movimiento no tiene botones para corregirlo.</dt>
+      <dd>Sólo se corrigen ventas de cantina, cobros de crédito de ventas y cobros de gimnasio. Los gastos, los cobros de cancha y los cobros viejos que el sistema no pudo asociar se corrigen desde Caja → Registro Diario Caja.</dd>
+
+      <dt>Me equivoqué al cambiar el medio.</dt>
+      <dd>Volvé a cambiarlo al medio correcto. Las dos correcciones quedan en el historial.</dd>
+
+      <dt>¿Por qué los cobros de gimnasio no tienen hora?</dt>
+      <dd>El sistema guarda esos cobros sólo con la fecha. Por eso en la columna de hora se ve "—".</dd>
+
+      <dt>No veo la pantalla de Corrección de caja.</dt>
+      <dd>Pedile al administrador el permiso. Si te lo acaban de dar, cerrá sesión y volvé a entrar.</dd>
+    </dl>
+  </section>
+
+  <section id="permisos">
+    <h2>9. Para el administrador: permisos</h2>
+    <p>Se configuran en <span class="ui">Administración → Perfiles</span>. Después de cambiarlos, el usuario tiene que cerrar sesión y volver a entrar.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Menú</th><th>Permiso</th><th>Qué habilita</th></tr></thead>
+        <tbody>
+          <tr><td class="ui">MOVIMIENTOSDIA</td><td>Leer</td><td>Ver Ventas y cobros del día</td></tr>
+          <tr><td class="ui">CORRECCIONCAJA</td><td>Leer</td><td>Ver los propios turnos en Corrección de caja, sin corregir</td></tr>
+          <tr><td class="ui">CORRECCIONCAJA</td><td>Editar</td><td>Corregir los movimientos del propio turno abierto (cajero)</td></tr>
+          <tr><td class="ui">CORRECCIONCAJA</td><td>Eliminar</td><td>Supervisor: ver todos los turnos y corregir turnos cerrados dentro del plazo</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>El perfil ADMINISTRADOR ya tiene todos estos permisos.</p>
+  </section>
+
+  <footer>Winners · Sistema de gestión</footer>
+</main>
+</body>
+</html>

@@ -135,6 +135,36 @@ async function turnoDeApertura(conn, aperturaId) {
   };
 }
 
+// Tope de id para "turno abierto" en un BETWEEN: la columna es integer.
+const ID_MAX = 2147483647;
+
+/**
+ * Movimientos actuales de un turno (incluye su apertura y su cierre), con la
+ * descripción y el local de la caja.
+ * @param {{aperturaId:number, cierreId:number|null, cajaId:number, usuarioId:string}} turno
+ */
+async function registrosDelTurno(conn, turno) {
+  const [candidatos] = await conn.query(
+    `SELECT r.*, c.CajaDescripcion, c.LocalId
+     FROM registrodiariocaja r
+     LEFT JOIN caja c ON c.CajaId = r.CajaId
+     WHERE r.CajaId = ? AND r.UsuarioId = ?
+       AND (r.AperturaRef = ? OR (r.AperturaRef IS NULL AND r.RegistroDiarioCajaId >= ?
+            AND r.RegistroDiarioCajaId <= ?))
+     ORDER BY r.RegistroDiarioCajaId ASC`,
+    [
+      turno.cajaId,
+      turno.usuarioId,
+      turno.aperturaId,
+      turno.aperturaId,
+      turno.cierreId ?? ID_MAX,
+    ]
+  );
+  return candidatos.filter((r) =>
+    perteneceAlTurno(r, turno.aperturaId, turno.cierreId)
+  );
+}
+
 /**
  * Expresión SQL (DATE) con el inicio real de un rango de movimientos para
  * armar los cierres de [desde, hasta]: el menor entre `desde` y el día de la
@@ -159,6 +189,7 @@ const SQL_DESDE_CON_APERTURAS = `LEAST(DATE(?), COALESCE((
 module.exports = {
   SQL_DESDE_CON_APERTURAS,
   perteneceAlTurno,
+  registrosDelTurno,
   turnoDeMovimiento,
   turnoDeApertura,
   cierreDeApertura,

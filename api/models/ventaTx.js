@@ -32,11 +32,12 @@ async function confirmarVentaTx(conn, p, { aperturaRef = null, sumarCaja = true 
     Productos,
   } = p;
 
-  // 1. Próximo VentaId (la tabla no es SERIAL; replica MAX+1 del GX).
-  const [maxRows] = await conn.query(
-    "SELECT COALESCE(MAX(VentaId), 0) AS m FROM venta"
+  // 1. Próximo VentaId, de la secuencia (migración 025). Antes era MAX+1 y,
+  // al anular la última venta, la siguiente repetía su número.
+  const [seqRows] = await conn.query(
+    "SELECT nextval('venta_ventaid_seq') AS id"
   );
-  const ultorden = Number(maxRows[0].m) + 1;
+  const ultorden = Number(seqRows[0].id);
 
   // 2. VentaTipo según composición del pago.
   let ventaTipo;

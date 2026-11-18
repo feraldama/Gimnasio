@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { usePermiso } from "../../hooks/usePermiso";
+import BotonTicketCierre from "../../components/common/Button/BotonTicketCierre";
 import { PermissionDenied } from "../../components/common/ui";
 import { loadPdf } from "../../utils/lazyPdf";
 import api from "../../services/api";
@@ -2158,6 +2159,9 @@ const ReportesPage: React.FC = () => {
                       <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
                         Sobrante/Faltante
                       </th>
+                      <th className="py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                        <span className="sr-only">Ticket</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2232,10 +2236,13 @@ const ReportesPage: React.FC = () => {
                                   ? `Sobr. ${formatMiles(-r.sobranteFaltante)}`
                                   : "0"}
                             </td>
+                            <td className="py-1 px-2 text-right">
+                              <BotonTicketCierre aperturaId={r.aperturaId} compacto />
+                            </td>
                           </tr>
                           {abierto && (
                             <tr className="border-b border-slate-200 bg-slate-50">
-                              <td colSpan={hayOtrosCierre ? 16 : 15} className="px-6 py-3">
+                              <td colSpan={hayOtrosCierre ? 17 : 16} className="px-6 py-3">
                                 <DetalleEfectivo control={r.control} />
                               </td>
                             </tr>

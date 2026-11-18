@@ -10,16 +10,10 @@ import {
 } from "../../services/registrodiariocaja.service";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
-import { formatMiles, todayLocalISO, formatDateLocal } from "../../utils/utils";
+import { formatMiles } from "../../utils/utils";
 import { useNavigate, useLocation } from "react-router-dom";
-import { loadPdf } from "../../utils/lazyPdf";
-import {
-  controlEfectivo,
-  desglosarIngresos,
-  ORIGENES,
-  type IngresosPorMedio,
-  type MovimientoEfectivo,
-} from "../../utils/cajaOrigen";
+import { fechaHoraTicket, generarTicketCierrePDF } from "../../utils/ticketCierreCaja";
+import { perteneceAlTurno } from "../../utils/cierreCaja";
 
 import type { Caja } from "../../types";
 
@@ -32,6 +26,7 @@ interface RegistroDiarioCaja {
   TipoGastoId: number;
   TipoGastoGrupoId: number;
   RegistroDiarioCajaDetalle?: string;
+  AperturaRef?: number | null;
 }
 
 export default function AperturaCierreCajaPage() {
@@ -154,8 +149,6 @@ export default function AperturaCierreCajaPage() {
 
     const cajaDescripcion =
       cajas.find((c) => c.CajaId == cajaId)?.CajaDescripcion || "";
-    const fecha = formatDateLocal(todayLocalISO());
-    const hora = new Date().toLocaleTimeString();
 
     // --- Nueva lógica: buscar última apertura y cierre del usuario ---
     const registros = registrosParaUsar.filter((r) => r.UsuarioId == user.id);
@@ -203,211 +196,31 @@ export default function AperturaCierreCajaPage() {
       return;
     }
 
-    // Filtrar los registros entre apertura y cierre (inclusive)
+    // Movimientos del turno. Misma regla que el reporte: los que cargó una
+    // corrección después del cierre llevan AperturaRef y también cuentan.
     const registrosFiltrados = registrosParaUsar.filter(
       (reg) =>
         reg.UsuarioId == user.id &&
-        reg.RegistroDiarioCajaId >= aperturaReg.RegistroDiarioCajaId &&
-        reg.RegistroDiarioCajaId <= cierreReg.RegistroDiarioCajaId
+        perteneceAlTurno(
+          reg,
+          aperturaReg.RegistroDiarioCajaId,
+          cierreReg.RegistroDiarioCajaId
+        )
     );
-    // Calcular totales
-    const apertura = aperturaReg.RegistroDiarioCajaMonto;
-    const cierre = cierreReg.RegistroDiarioCajaMonto;
-    let egresos = 0;
-    for (const reg of registrosFiltrados) {
-      if (reg.TipoGastoId === 1 && reg.TipoGastoGrupoId !== 2) {
-        egresos += reg.RegistroDiarioCajaMonto;
-      }
-    }
-    // Ingresos por origen (gimnasio / productos / otros) y por medio de pago.
-    const desglose = desglosarIngresos(registrosFiltrados);
-    const totalMedio = (campo: keyof IngresosPorMedio) =>
-      ORIGENES.reduce((acc, o) => acc + desglose[o.key][campo], 0);
-    const ingresos = totalMedio("efectivo");
-    const ingresosPOS = totalMedio("pos");
-    const ingresosVoucher = totalMedio("voucher");
-    const ingresosTransfer = totalMedio("transfer");
-    // Control de efectivo: qué movimientos componen el efectivo esperado, para
-    // poder buscar dónde está el sobrante/faltante.
-    const control = controlEfectivo(registrosFiltrados, apertura, cierre);
-    const sobranteFaltante = control.diferencia;
-    let txtSobranteFaltante = "";
-    if (sobranteFaltante > 0) {
-      txtSobranteFaltante = `Faltante de: Gs. ${formatMiles(sobranteFaltante)}`;
-    } else if (sobranteFaltante < 0) {
-      txtSobranteFaltante = `Sobrante de: Gs. ${formatMiles(
-        Math.abs(sobranteFaltante)
-      )}`;
-    } else {
-      txtSobranteFaltante = `Sobrante/Faltante: Gs. 0`;
-    }
-    // "Otros" (cancha, etc.) sólo aparece si tuvo movimientos en el turno.
-    const origenesTicket = ORIGENES.filter(
-      (o) => o.key !== "otros" || desglose.otros.total > 0
+    // Fecha y hora del cierre, no las de ahora: si el cajero vuelve a
+    // descargar el ticket más tarde tiene que salir igual.
+    const { fecha, hora } = fechaHoraTicket(
+      new Date(cierreReg.RegistroDiarioCajaFecha)
     );
-    const totalIngresos =
-      ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
-    const diferencia = totalIngresos - egresos;
-
-    // --- Generar PDF ---
-    const { jsPDF } = await loadPdf();
-    type Doc = InstanceType<typeof jsPDF>;
-    // Recorta el detalle de un movimiento para que no pise el monto.
-    const ajustar = (d: Doc, texto: string, ancho: number) => {
-      if (d.getTextWidth(texto) <= ancho) return texto;
-      let t = texto;
-      while (t.length > 1 && d.getTextWidth(t + "…") > ancho) t = t.slice(0, -1);
-      return t + "…";
-    };
-    // Dibuja el ticket y devuelve dónde terminó. Se llama dos veces: una para
-    // medir el alto (depende de cuántos movimientos tuvo el turno) y otra en
-    // la hoja definitiva.
-    const dibujar = (doc: Doc) => {
-      doc.setFontSize(16);
-      doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
-      doc.setFontSize(11);
-      doc.text(`Fecha: ${fecha} - Hora: ${hora}`, 10, 30);
-      doc.text(`Usuario: ${user.nombre}`, 10, 38);
-      doc.text(`Caja: ${cajaDescripcion}`, 10, 46);
-      doc.line(10, 50, 200, 50);
-      let y = 58;
-      doc.text(`Apertura: ${formatMiles(apertura)}`, 10, y);
-      y += 8;
-      doc.text(`Cierre: ${formatMiles(cierre)}`, 10, y);
-      y += 8;
-      doc.line(10, y, 200, y);
-      y += 8;
-      doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
-      y += 8;
-      doc.line(10, y, 200, y);
-      y += 8;
-      for (const o of origenesTicket) {
-        const d = desglose[o.key];
-        doc.setFont("helvetica", "bold");
-        doc.text(`INGRESOS ${o.label.toUpperCase()}`, 10, y);
-        doc.setFont("helvetica", "normal");
-        y += 7;
-        doc.setFontSize(10);
-        doc.text(`Efectivo: ${formatMiles(d.efectivo)}`, 13, y);
-        y += 6;
-        doc.text(`POS: ${formatMiles(d.pos)}`, 13, y);
-        y += 6;
-        doc.text(`Voucher: ${formatMiles(d.voucher)}`, 13, y);
-        y += 6;
-        doc.text(`Transfer: ${formatMiles(d.transfer)}`, 13, y);
-        y += 7;
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Subtotal ${o.label}: ${formatMiles(d.total)}`, 10, y);
-        doc.setFont("helvetica", "normal");
-        y += 6;
-        doc.line(10, y, 200, y);
-        y += 8;
-      }
-      doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
-      y += 8;
-      doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
-      y += 8;
-      doc.text(`Ingresos Voucher: ${formatMiles(ingresosVoucher)}`, 10, y);
-      y += 8;
-      doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
-      y += 8;
-      doc.line(10, y, 200, y);
-      y += 8;
-      doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
-      y += 8;
-      doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
-      y += 8;
-      doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
-      y += 8;
-      doc.line(10, y, 200, y);
-      y += 8;
-
-      // --- Control de efectivo ---
-      const linea = (texto: string, monto: string, negrita = false) => {
-        doc.setFont("helvetica", negrita ? "bold" : "normal");
-        doc.text(texto, 10, y);
-        doc.text(monto, 70, y, { align: "right" });
-        doc.setFont("helvetica", "normal");
-      };
-      const movimientos = (lista: MovimientoEfectivo[]) => {
-        doc.setFontSize(8);
-        for (const m of lista) {
-          const monto = formatMiles(m.monto);
-          const ancho = 70 - 13 - doc.getTextWidth(monto) - 2;
-          doc.text(ajustar(doc, m.detalle, ancho), 13, y);
-          doc.text(monto, 70, y, { align: "right" });
-          y += 4.5;
-        }
-        doc.setFontSize(10);
-      };
-      doc.setFont("helvetica", "bold");
-      doc.text("CONTROL DE EFECTIVO", 10, y);
-      doc.setFont("helvetica", "normal");
-      y += 7;
-      doc.setFontSize(10);
-      linea("Apertura", formatMiles(control.apertura));
-      y += 6;
-      for (const o of ORIGENES) {
-        const g = control.porOrigen[o.key];
-        if (o.key === "otros" && g.movimientos.length === 0) continue;
-        linea(`+ Efectivo ${o.label}`, formatMiles(g.total), true);
-        y += 5;
-        movimientos(g.movimientos);
-        y += 1.5;
-      }
-      linea("- Egresos", formatMiles(control.egresos.total), true);
-      y += 5;
-      movimientos(control.egresos.movimientos);
-      y += 1.5;
-      doc.line(10, y - 3, 70, y - 3);
-      y += 2;
-      linea("Efectivo esperado", formatMiles(control.esperado), true);
-      y += 6;
-      linea("Cierre declarado", formatMiles(control.declarado));
-      y += 8;
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text(txtSobranteFaltante, 10, y);
-      doc.setFont("helvetica", "normal");
-      y += 12;
-      doc.text("--GRACIAS POR SU PREFERENCIA--", 10, y);
-      return y;
-    };
-    const altoMedido = dibujar(new jsPDF({ unit: "mm", format: [80, 2000] }));
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: [80, Math.max(200, altoMedido + 15)], // 80mm de ancho
+    await generarTicketCierrePDF({
+      fecha,
+      hora,
+      usuario: user.nombre,
+      caja: cajaDescripcion,
+      apertura: aperturaReg.RegistroDiarioCajaMonto,
+      cierre: cierreReg.RegistroDiarioCajaMonto,
+      registros: registrosFiltrados,
     });
-    dibujar(doc);
-
-    // Generar el PDF y abrirlo automáticamente
-    const pdfBlob = doc.output("blob");
-    const pdfUrl = URL.createObjectURL(pdfBlob);
-
-    // Crear un enlace temporal para descargar el PDF
-    const link = document.createElement("a");
-    link.href = pdfUrl;
-    link.download = `ResumenCierreCaja_${fecha.replace(/\//g, "-")}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Abrir el PDF automáticamente en una nueva pestaña
-    setTimeout(() => {
-      const openLink = document.createElement("a");
-      openLink.href = pdfUrl;
-      openLink.target = "_blank";
-      document.body.appendChild(openLink);
-      openLink.click();
-      document.body.removeChild(openLink);
-    }, 500);
-
-    // Limpiar la URL del objeto después de un tiempo
-    setTimeout(() => {
-      URL.revokeObjectURL(pdfUrl);
-    }, 2000);
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -187,6 +187,8 @@ module.exports = {
   "ventaproductoprecio": "VentaProductoPrecio",
   "ventaproductopreciototal": "VentaProductoPrecioTotal",
   "ventaproductounitario": "VentaProductoUnitario",
+  "esperadocierre": "EsperadoCierre",
+  "diferenciacierre": "DiferenciaCierre",
   "aperturaref": "AperturaRef",
   "aperturaid": "AperturaId",
   "cierreid": "CierreId",

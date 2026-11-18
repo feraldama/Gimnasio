@@ -4,7 +4,40 @@ const {
   TIPO_GASTO_CIERRE,
   TIPO_GASTO_GRUPO_CAJA,
 } = require("../utils/cajaApertura");
-const { SQL_DESDE_CON_APERTURAS } = require("../utils/turnoCaja");
+const {
+  SQL_DESDE_CON_APERTURAS,
+  registrosDelTurno,
+} = require("../utils/turnoCaja");
+const { esperadoDelTurno } = require("../utils/ticketCierre");
+
+/**
+ * Guarda en la fila del cierre el efectivo esperado y la diferencia de ese
+ * momento (migración 026). La reimpresión del ticket los usa para mostrar el
+ * sobrante/faltante "Al cerrar" aunque después se corrija el turno. Misma
+ * regla que el ticket del cajero (client/src/utils/cajaOrigen.ts).
+ */
+async function guardarEsperadoCierre(conn, { cierreId, cajaId, usuarioId, declarado }) {
+  const [ap] = await conn.query(
+    `SELECT RegistroDiarioCajaId, RegistroDiarioCajaMonto FROM registrodiariocaja
+     WHERE CajaId = ? AND UsuarioId = ? AND TipoGastoId = ? AND TipoGastoGrupoId = ?
+       AND RegistroDiarioCajaId < ?
+     ORDER BY RegistroDiarioCajaId DESC LIMIT 1`,
+    [cajaId, usuarioId, TIPO_GASTO_APERTURA, TIPO_GASTO_GRUPO_CAJA, cierreId]
+  );
+  if (!ap.length) return;
+  const registros = await registrosDelTurno(conn, {
+    aperturaId: ap[0].RegistroDiarioCajaId,
+    cierreId,
+    cajaId,
+    usuarioId,
+  });
+  const esperado = esperadoDelTurno(registros, ap[0].RegistroDiarioCajaMonto);
+  await conn.query(
+    `UPDATE registrodiariocaja SET EsperadoCierre = ?, DiferenciaCierre = ?
+     WHERE RegistroDiarioCajaId = ?`,
+    [esperado, esperado - (Number(declarado) || 0), cierreId]
+  );
+}
 
 /**
  * Normaliza RegistroDiarioCajaFecha para que siempre incluya fecha y hora.
@@ -437,6 +470,12 @@ const RegistroDiarioCaja = {
         await conn.query("UPDATE Caja SET CajaMonto = 0 WHERE CajaId = ?", [
           cajaId,
         ]);
+        await guardarEsperadoCierre(conn, {
+          cierreId: ins.insertId,
+          cajaId,
+          usuarioId,
+          declarado: monto,
+        });
       }
 
       await conn.commit();

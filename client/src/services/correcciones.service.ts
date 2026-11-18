@@ -126,6 +126,34 @@ export const getTurnoParaCorreccion = async (aperturaId: number): Promise<TurnoD
   }
 };
 
+export interface TicketTurno {
+  turno: {
+    aperturaId: number;
+    cierreId: number;
+    cajaId: number;
+    cajaDescripcion: string | null;
+    usuarioId: string;
+    usuarioNombre: string | null;
+    aperturaFecha: string;
+    cierreFecha: string;
+  };
+  registros: RegistroTurno[];
+  correccionesPosteriores: number;
+  /** Sobrante/faltante del ticket original (> 0 faltante). */
+  diferenciaAlCerrar: number;
+  /** true = lo guardó el cierre; false = reconstruido (cierres viejos). */
+  guardadoAlCerrar: boolean;
+}
+
+export const getTicketTurno = async (aperturaId: number): Promise<TicketTurno> => {
+  try {
+    const r = await api.get(`/correcciones/turno/${aperturaId}/ticket`);
+    return r.data;
+  } catch (e) {
+    lanzar(e, "No se pudo obtener el ticket del turno");
+  }
+};
+
 export const cambiarMedioMovimiento = async (
   registroId: number,
   medio: Medio,

@@ -19,6 +19,7 @@ import {
   TextInput,
 } from "../../components/common/ui";
 import { usePermiso } from "../../hooks/usePermiso";
+import BotonTicketCierre from "../../components/common/Button/BotonTicketCierre";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import {
   anularVentaCorreccion,
@@ -250,14 +251,17 @@ export default function CorreccionCajaPage() {
             {turnos.map((t) => {
               const activo = t.aperturaId === aperturaSel;
               return (
-                <li key={t.aperturaId}>
+                <li
+                  key={t.aperturaId}
+                  className={`flex items-center gap-2 pr-5 transition-colors hover:bg-surface-sunken ${
+                    activo ? "bg-brand-50" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setAperturaSel(activo ? null : t.aperturaId)}
                     aria-expanded={activo}
-                    className={`flex w-full flex-wrap items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-surface-sunken ${
-                      activo ? "bg-brand-50" : ""
-                    }`}
+                    className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 py-3 pl-5 text-left"
                   >
                     <div>
                       <div className="font-medium text-text">
@@ -276,6 +280,7 @@ export default function CorreccionCajaPage() {
                       <Diferencia valor={t.diferencia} abierto={t.abierto} />
                     </div>
                   </button>
+                  {!t.abierto && <BotonTicketCierre aperturaId={t.aperturaId} compacto />}
                 </li>
               );
             })}

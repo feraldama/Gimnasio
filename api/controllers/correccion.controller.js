@@ -11,7 +11,8 @@ const db = require("../config/db");
 const Configuracion = require("../models/configuracion.model");
 const Correccion = require("../models/correccionCaja.model");
 const { evaluarPermisoCorreccion, validarMotivo, MEDIOS } = require("../utils/correccionCaja");
-const { turnoDeApertura, perteneceAlTurno } = require("../utils/turnoCaja");
+const { turnoDeApertura, registrosDelTurno } = require("../utils/turnoCaja");
+const { diferenciaAlCerrar } = require("../utils/ticketCierre");
 const { todayLocalISO } = require("../utils/dateUtils");
 const { sendError } = require("../utils/errors");
 
@@ -196,6 +197,81 @@ exports.getTurnos = async (req, res) => {
   }
 };
 
+// GET /correcciones/turno/:aperturaId/ticket
+// Datos para reimprimir el ticket de cierre de un turno cerrado, igual al que
+// imprime el cajero, más el ajuste de las correcciones hechas después del
+// cierre (utils/ticketCierre.js) para mostrar el sobrante/faltante original.
+// Lo puede pedir: el supervisor de corrección, quien lee REPORTES (botón del
+// reporte "Cierre de caja por rango") o el cajero dueño del turno.
+exports.getTicket = async (req, res) => {
+  const aperturaId = Number(req.params.aperturaId);
+  if (!Number.isInteger(aperturaId) || aperturaId <= 0) {
+    return res.status(400).json({ message: "Turno inválido" });
+  }
+  try {
+    const data = await conConexion(async (conn) => {
+      const turno = await turnoDeApertura(conn, aperturaId);
+      if (!turno) return null;
+      const esAdmin = req.user?.isAdmin === "S";
+      const propio = String(turno.usuarioId) === String(req.user.id);
+      const permitido =
+        esAdmin ||
+        propio ||
+        (await tienePermiso(conn, req.user.id, "CORRECCIONCAJA", "eliminar")) ||
+        (await tienePermiso(conn, req.user.id, "REPORTES", "leer"));
+      if (!permitido) {
+        const e = new Error("Sólo podés imprimir el ticket de tus propios turnos");
+        e.status = 403;
+        throw e;
+      }
+      if (turno.abierto) {
+        const e = new Error("El turno sigue abierto: todavía no tiene ticket de cierre");
+        e.status = 409;
+        throw e;
+      }
+
+      const registros = await registrosDelTurno(conn, turno);
+      const [correcciones] = await conn.query(
+        `SELECT * FROM correccioncaja WHERE AperturaId = ? ORDER BY CorreccionCajaId`,
+        [aperturaId]
+      );
+      const posteriores = correcciones.filter((c) => c.CierreId != null).length;
+      const cierreReg = registros.find(
+        (r) => r.RegistroDiarioCajaId === turno.cierreId
+      );
+      const difAlCerrar = diferenciaAlCerrar({
+        cierre: cierreReg,
+        apertura: turno.apertura,
+        registros,
+        correcciones,
+        turno,
+      });
+      return {
+        turno: {
+          aperturaId: turno.aperturaId,
+          cierreId: turno.cierreId,
+          cajaId: turno.cajaId,
+          cajaDescripcion: turno.apertura.CajaDescripcion,
+          usuarioId: turno.usuarioId,
+          usuarioNombre: turno.apertura.UsuarioNombre || null,
+          aperturaFecha: turno.apertura.RegistroDiarioCajaFecha,
+          cierreFecha: turno.cierreFecha,
+        },
+        registros,
+        correccionesPosteriores: posteriores,
+        // Sobrante/faltante del ticket original (> 0 faltante): el guardado
+        // al cerrar (migración 026) o, en cierres viejos, reconstruido.
+        diferenciaAlCerrar: difAlCerrar,
+        guardadoAlCerrar: cierreReg?.DiferenciaCierre != null,
+      };
+    });
+    if (!data) return res.status(404).json({ message: "Turno no encontrado" });
+    res.json(data);
+  } catch (error) {
+    responderError(res, error, "Error obteniendo ticket de cierre:");
+  }
+};
+
 // GET /correcciones/turno/:aperturaId
 exports.getTurno = async (req, res) => {
   const aperturaId = Number(req.params.aperturaId);
@@ -213,25 +289,7 @@ exports.getTurno = async (req, res) => {
         throw e;
       }
 
-      const [candidatos] = await conn.query(
-        `SELECT r.*, c.CajaDescripcion, c.LocalId
-         FROM registrodiariocaja r
-         LEFT JOIN caja c ON c.CajaId = r.CajaId
-         WHERE r.CajaId = ? AND r.UsuarioId = ?
-           AND (r.AperturaRef = ? OR (r.AperturaRef IS NULL AND r.RegistroDiarioCajaId >= ?
-                AND r.RegistroDiarioCajaId <= ?))
-         ORDER BY r.RegistroDiarioCajaId ASC`,
-        [
-          turno.cajaId,
-          turno.usuarioId,
-          aperturaId,
-          aperturaId,
-          turno.cierreId ?? ID_MAX,
-        ]
-      );
-      const registros = candidatos.filter((r) =>
-        perteneceAlTurno(r, aperturaId, turno.cierreId)
-      );
+      const registros = await registrosDelTurno(conn, turno);
 
       const ventaIds = [...new Set(registros.map((r) => r.VentaId).filter((x) => x != null))];
       const pagoIds = [...new Set(registros.map((r) => r.PagoId).filter((x) => x != null))];
