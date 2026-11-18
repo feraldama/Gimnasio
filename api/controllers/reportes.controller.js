@@ -10,6 +10,7 @@ const CanchaReserva = require("../models/canchaReserva.model");
 const { CanchaTarifa, siglaDia } = require("../models/canchaTarifa.model");
 const Suscripcion = require("../models/suscripcion.model");
 const { toLocalISODate, addDaysLocal } = require("../utils/dateUtils");
+const { SQL_DESDE_CON_APERTURAS } = require("../utils/turnoCaja");
 const { sendError } = require("../utils/errors");
 
 // Horario operativo de Cancha: configurable via `configuracion`. Defaults
@@ -207,9 +208,14 @@ exports.resumenLocal = async (req, res) => {
       SELECT r.*, c.CajaDescripcion, c.LocalId
       FROM registrodiariocaja r
       LEFT JOIN Caja c ON r.CajaId = c.CajaId
-      WHERE DATE(r.RegistroDiarioCajaFecha) BETWEEN (?::date - 1) AND (?::date + 1)
+      WHERE DATE(r.RegistroDiarioCajaFecha) >= ${SQL_DESDE_CON_APERTURAS}
+        AND DATE(r.RegistroDiarioCajaFecha) <= (?::date + 1)
       ORDER BY r.RegistroDiarioCajaId ASC
     `;
+    // Un día de margen como antes, y además hasta la apertura de los turnos
+    // que cierran en el rango (utils/turnoCaja.js).
+    const desdeMargen = addDaysLocal(desde, -1);
+    const hastaMargen = addDaysLocal(hasta, 1);
 
     const [locales, ventas, suscripciones, ventasSinCaja, creditos, stock, caja] =
       await Promise.all([
@@ -219,7 +225,7 @@ exports.resumenLocal = async (req, res) => {
         queryAsync(sqlVentasSinCaja, [desde, hasta]),
         queryAsync(sqlCreditos, []),
         queryAsync(sqlStock, []),
-        queryAsync(sqlCaja, [desde, hasta]),
+        queryAsync(sqlCaja, [desdeMargen, desdeMargen, hastaMargen, desdeMargen, hasta]),
       ]);
 
     res.json({

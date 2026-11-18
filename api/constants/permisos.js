@@ -25,6 +25,8 @@ const LECTORES_CATALOGO = [
   "INVENTARIO",
   "COMBOS",
   "REPORTES",
+  // Corrección de caja: "cargar venta faltante" elige productos del catálogo.
+  "CORRECCIONCAJA",
 ];
 
 // Igual que arriba pero sin los reportes: quien elige un almacén está

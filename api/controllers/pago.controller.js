@@ -4,6 +4,7 @@ const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
 const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
 const { sendError } = require("../utils/errors");
+const { anularPagoVinculadoTx } = require("../models/correccionCaja.model");
 
 /**
  * Reglas de negocio para cobrar sobre una suscripción (dentro de la
@@ -503,10 +504,16 @@ exports.update = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
-  // Anulación transaccional: registra un movimiento de egreso en
-  // registrodiariocaja que neutraliza el ingreso original y descuenta
-  // el monto de Caja antes de borrar el pago. Requiere caja abierta
-  // del usuario que anula (ajuste contable sobre caja actual).
+  // Anulación transaccional.
+  //
+  // Pago con su movimiento de caja vinculado (PagoId, migración 023): se
+  // borra el movimiento del turno donde está y, sólo si ese turno sigue
+  // abierto, se descuenta el efectivo del cajón (models/correccionCaja.model).
+  // Antes se registraba un egreso en la caja abierta HOY de quien anulaba, y
+  // la diferencia de un cobro de ayer terminaba en el cierre de hoy.
+  //
+  // Pago sin movimiento vinculado (datos viejos que no se pudieron vincular):
+  // comportamiento anterior — egreso en la caja abierta del usuario que anula.
   if (!req.user?.id) {
     return res.status(401).json({ message: "Usuario no autenticado" });
   }
@@ -515,6 +522,16 @@ exports.delete = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     await connection.beginTransaction();
+
+    const vinculado = await anularPagoVinculadoTx(connection, {
+      pagoId: Number(req.params.id),
+      motivo: "Anulación desde Pagos",
+      usuarioId,
+    });
+    if (vinculado) {
+      await connection.commit();
+      return res.json({ message: "Pago anulado y caja ajustada exitosamente" });
+    }
 
     const [pagoRows] = await connection.query(
       "SELECT * FROM pago WHERE PagoId = ?",
@@ -590,6 +607,9 @@ exports.delete = async (req, res) => {
       await connection.rollback();
     } catch (rollbackErr) {
       console.error("Error en rollback:", rollbackErr);
+    }
+    if (error?.status) {
+      return res.status(error.status).json({ message: error.message });
     }
     if (error?.message?.includes("a foreign key constraint fails")) {
       return res.status(400).json({

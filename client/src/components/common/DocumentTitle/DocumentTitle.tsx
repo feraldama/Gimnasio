@@ -34,6 +34,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/tablero-mensual": "Tablero mensual",
   "/pagos": "Pagos",
   "/movimientos-dia": "Ventas y cobros del día",
+  "/correccion-caja": "Corrección de caja",
   "/reportes": "Reportes",
   "/facturas": "Facturas",
   "/asistencia": "Asistencia",

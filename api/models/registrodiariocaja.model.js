@@ -4,6 +4,7 @@ const {
   TIPO_GASTO_CIERRE,
   TIPO_GASTO_GRUPO_CAJA,
 } = require("../utils/cajaApertura");
+const { SQL_DESDE_CON_APERTURAS } = require("../utils/turnoCaja");
 
 /**
  * Normaliza RegistroDiarioCajaFecha para que siempre incluya fecha y hora.
@@ -486,11 +487,23 @@ const RegistroDiarioCaja = {
         LEFT JOIN Caja c ON r.CajaId = c.CajaId
         LEFT JOIN TipoGasto t ON r.TipoGastoId = t.TipoGastoId
         LEFT JOIN tipogastogrupo tg ON r.TipoGastoId = tg.TipoGastoId AND r.TipoGastoGrupoId = tg.TipoGastoGrupoId
-        WHERE DATE(r.RegistroDiarioCajaFecha) >= DATE(?) AND DATE(r.RegistroDiarioCajaFecha) <= DATE(?)
+        WHERE DATE(r.RegistroDiarioCajaFecha) >= ${SQL_DESDE_CON_APERTURAS}
+          AND DATE(r.RegistroDiarioCajaFecha) <= DATE(?)
         ORDER BY r.RegistroDiarioCajaId ASC
         LIMIT ?
       `;
-      db.query(query, [fechaDesdeStr, fechaHastaStr, limit], (err, results) => {
+      // El inicio se adelanta hasta la apertura de los turnos que cierran en
+      // el rango (utils/turnoCaja.js): si no, un turno abierto varios días
+      // queda fuera del reporte de cierre.
+      const params = [
+        fechaDesdeStr,
+        fechaDesdeStr,
+        fechaHastaStr,
+        fechaDesdeStr,
+        fechaHastaStr,
+        limit,
+      ];
+      db.query(query, params, (err, results) => {
         if (err) return reject(err);
         resolve(results);
       });
@@ -534,13 +547,18 @@ const RegistroDiarioCaja = {
   getTurnoActualUsuario: (usuarioId, cajaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT * FROM registrodiariocaja
-         WHERE UsuarioId = ? AND CajaId = ?
-           AND RegistroDiarioCajaId >= (
-             SELECT COALESCE(MAX(RegistroDiarioCajaId), 0) FROM registrodiariocaja
-             WHERE UsuarioId = ? AND CajaId = ? AND TipoGastoId = 2 AND TipoGastoGrupoId = 2
-           )
-         ORDER BY RegistroDiarioCajaId DESC`,
+        // Movimientos con AperturaRef pertenecen al turno que indican (una
+        // corrección cargada en un turno cerrado), no al rango de ids: ver
+        // utils/turnoCaja.js.
+        `WITH ap AS (
+           SELECT COALESCE(MAX(RegistroDiarioCajaId), 0) AS id FROM registrodiariocaja
+           WHERE UsuarioId = ? AND CajaId = ? AND TipoGastoId = 2 AND TipoGastoGrupoId = 2
+         )
+         SELECT r.* FROM registrodiariocaja r, ap
+         WHERE r.UsuarioId = ? AND r.CajaId = ?
+           AND ((r.AperturaRef IS NULL AND r.RegistroDiarioCajaId >= ap.id)
+                OR r.AperturaRef = ap.id)
+         ORDER BY r.RegistroDiarioCajaId DESC`,
         [usuarioId, cajaId, usuarioId, cajaId],
         (err, results) => {
           if (err) return reject(err);

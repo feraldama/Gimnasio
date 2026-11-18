@@ -122,6 +122,7 @@ const navigation: NavigationItem[] = [
     icon: <BanknotesIcon className="h-7 w-6" />,
     children: [
       { name: "Registro Diario Caja", href: "/movements/summary" },
+      { name: "Corrección de caja", href: "/correccion-caja" },
       { name: "Clientes con deuda", href: "/clientes-con-deuda" },
       { name: "Cajas", href: "/movements/cajas" },
       { name: "Tipos de Gasto", href: "/movements/tiposgasto" },

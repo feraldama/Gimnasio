@@ -12,12 +12,14 @@ import {
   type ProductoMovimientoRow,
   type ProductoMasVendidoRow,
 } from "../../services/productos.service";
+import { getRegistrosDiariosCajaPorRango } from "../../services/registros.service";
 import {
-  getRegistrosDiariosCajaPorRango,
-  type RegistroDiarioCajaRow,
-} from "../../services/registros.service";
+  buildResumenesCierre,
+  type ResumenCierre,
+  formatDateDDMMYYYY,
+  toLocalDateStr,
+} from "../../utils/cierreCaja";
 import {
-  controlEfectivo,
   desglosarIngresos,
   desgloseVacio,
   sumarDesgloses,
@@ -123,181 +125,9 @@ interface ProductoStockReporte {
   productoAlmacen: ProductoAlmacenStock[];
 }
 
-interface ResumenCierre {
-  fechaCierre: string;
-  fechaCierreDate: Date;
-  cajaId: number;
-  cajaDescripcion: string;
-  /** Local de la caja (caja.LocalId); 0 = sin local. */
-  localId: number;
-  usuarioId: string;
-  apertura: number;
-  cierre: number;
-  egresos: number;
-  ingresos: number;
-  ingresosPOS: number;
-  ingresosVoucher: number;
-  ingresosTransfer: number;
-  totalIngresos: number;
-  diferencia: number;
-  sobranteFaltante: number;
-  control: ControlEfectivo;
-  parcial?: boolean;
-}
-
-function toLocalDateStr(fechaRegistro: string): string {
-  const d = new Date(fechaRegistro);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function formatDateDDMMYYYY(fecha: Date | string): string {
-  const d =
-    typeof fecha === "string"
-      ? new Date(fecha.includes("T") ? fecha : fecha + "T12:00:00")
-      : fecha;
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
-}
-
 function getHoyISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function calcularTotalesCiclo(
-  registrosCajaUsuario: RegistroDiarioCajaRow[],
-  idApertura: number,
-  idCierre: number,
-) {
-  const filtrados = registrosCajaUsuario.filter(
-    (r) =>
-      r.RegistroDiarioCajaId >= idApertura &&
-      r.RegistroDiarioCajaId <= idCierre,
-  );
-  const aperturaReg = filtrados.find(
-    (r) => r.TipoGastoId === 2 && r.TipoGastoGrupoId === 2,
-  );
-  const cierreReg = filtrados.find(
-    (r) => r.TipoGastoId === 1 && r.TipoGastoGrupoId === 2,
-  );
-  const apertura = aperturaReg?.RegistroDiarioCajaMonto ?? 0;
-  const cierre = cierreReg?.RegistroDiarioCajaMonto ?? 0;
-
-  let egresos = 0;
-  let ingresos = 0;
-  let ingresosPOS = 0;
-  let ingresosVoucher = 0;
-  let ingresosTransfer = 0;
-  for (const reg of filtrados) {
-    if (
-      reg.TipoGastoId === 2 &&
-      reg.TipoGastoGrupoId !== 2 &&
-      reg.TipoGastoGrupoId !== 4 &&
-      reg.TipoGastoGrupoId !== 5 &&
-      reg.TipoGastoGrupoId !== 6
-    ) {
-      ingresos += reg.RegistroDiarioCajaMonto;
-    }
-    if (reg.TipoGastoId === 1 && reg.TipoGastoGrupoId !== 2) {
-      egresos += reg.RegistroDiarioCajaMonto;
-    }
-    if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 4) {
-      ingresosPOS += reg.RegistroDiarioCajaMonto;
-    }
-    if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 5) {
-      ingresosVoucher += reg.RegistroDiarioCajaMonto;
-    }
-    if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 6) {
-      ingresosTransfer += reg.RegistroDiarioCajaMonto;
-    }
-  }
-  const totalIngresos =
-    ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
-  const diferencia = totalIngresos - egresos;
-  const sobranteFaltante = ingresos + apertura - (cierre + egresos);
-  // Movimientos que componen el efectivo esperado, por origen, para poder
-  // buscar dónde está el sobrante/faltante.
-  const control = controlEfectivo(filtrados, apertura, cierre);
-
-  return {
-    control,
-    apertura,
-    cierre,
-    egresos,
-    ingresos,
-    ingresosPOS,
-    ingresosVoucher,
-    ingresosTransfer,
-    totalIngresos,
-    diferencia,
-    sobranteFaltante,
-  };
-}
-
-function buildResumenesCierre(
-  registros: RegistroDiarioCajaRow[],
-  fechaDesde: string,
-  fechaHasta: string,
-): ResumenCierre[] {
-  if (registros.length === 0) return [];
-
-  const cierres = registros
-    .filter((r) => r.TipoGastoId === 1 && r.TipoGastoGrupoId === 2)
-    .sort((a, b) => a.RegistroDiarioCajaId - b.RegistroDiarioCajaId);
-
-  const resumenes: ResumenCierre[] = [];
-
-  for (const cierreReg of cierres) {
-    const fechaCierreLocal = toLocalDateStr(cierreReg.RegistroDiarioCajaFecha);
-    if (fechaCierreLocal < fechaDesde || fechaCierreLocal > fechaHasta)
-      continue;
-    const registrosCajaUsuario = registros.filter(
-      (r) =>
-        r.CajaId === cierreReg.CajaId && r.UsuarioId === cierreReg.UsuarioId,
-    );
-    const mismosCajaUsuarioHastaCierre = registrosCajaUsuario.filter(
-      (r) => r.RegistroDiarioCajaId <= cierreReg.RegistroDiarioCajaId,
-    );
-    const aperturas = mismosCajaUsuarioHastaCierre
-      .filter(
-        (r) =>
-          r.TipoGastoId === 2 &&
-          r.TipoGastoGrupoId === 2 &&
-          r.RegistroDiarioCajaId < cierreReg.RegistroDiarioCajaId,
-      )
-      .sort((a, b) => b.RegistroDiarioCajaId - a.RegistroDiarioCajaId);
-    const aperturaReg = aperturas[0];
-    if (!aperturaReg) continue;
-    if (cierreReg.RegistroDiarioCajaId <= aperturaReg.RegistroDiarioCajaId)
-      continue;
-
-    const totals = calcularTotalesCiclo(
-      registrosCajaUsuario,
-      aperturaReg.RegistroDiarioCajaId,
-      cierreReg.RegistroDiarioCajaId,
-    );
-
-    const fechaCierreDate = new Date(cierreReg.RegistroDiarioCajaFecha);
-    resumenes.push({
-      fechaCierre: formatDateDDMMYYYY(fechaCierreDate),
-      fechaCierreDate,
-      cajaId: cierreReg.CajaId,
-      cajaDescripcion: cierreReg.CajaDescripcion ?? `Caja ${cierreReg.CajaId}`,
-      localId: Number(cierreReg.LocalId) || 0,
-      usuarioId: cierreReg.UsuarioId,
-      ...totals,
-    });
-  }
-
-  resumenes.sort(
-    (a, b) => a.fechaCierreDate.getTime() - b.fechaCierreDate.getTime(),
-  );
-  return resumenes;
 }
 
 // Detalle del control de efectivo de un cierre: qué movimientos componen el

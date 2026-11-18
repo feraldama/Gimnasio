@@ -116,6 +116,15 @@ export interface RegistroDiarioCajaRow {
   CajaDescripcion?: string;
   /** Local de la caja (caja.LocalId); 0 = caja sin local. */
   LocalId?: number;
+  /** Venta a la que pertenece el movimiento (migración 023). */
+  VentaId?: number | null;
+  /** Pago de suscripción al que pertenece el movimiento (migración 023). */
+  PagoId?: number | null;
+  /**
+   * Apertura del turno al que pertenece; sólo en movimientos cargados por una
+   * corrección en un turno cerrado. Ver utils/cierreCaja.ts.
+   */
+  AperturaRef?: number | null;
 }
 
 export const getRegistroDiarioCajaById = async (id: string | number) => {

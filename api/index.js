@@ -44,6 +44,7 @@ const canchaBloqueoRoutes = require("./routes/canchaBloqueo.routes");
 const reportesRoutes = require("./routes/reportes.routes");
 const tableroRoutes = require("./routes/tablero.routes");
 const movimientosDiaRoutes = require("./routes/movimientosDia.routes");
+const correccionRoutes = require("./routes/correccion.routes");
 // const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
 const app = express();
@@ -143,6 +144,7 @@ app.use("/api/cancha-bloqueos", canchaBloqueoRoutes);
 app.use("/api/reportes", reportesRoutes);
 app.use("/api/tablero", tableroRoutes);
 app.use("/api/movimientos-dia", movimientosDiaRoutes);
+app.use("/api/correcciones", correccionRoutes);
 // app.use("/api/productos", productoRoutes); // Ejemplo adicional
 
 // Ruta de prueba
