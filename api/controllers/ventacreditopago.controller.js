@@ -1,6 +1,8 @@
 const VentaCreditoPago = require("../models/ventacreditopago.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
+const { toLocalSQLDateTime } = require("../utils/dateUtils");
+const { normalizeRegistroFecha } = require("../utils/registroFecha");
 
 function parseFecha(s) {
   if (!s) return null;
@@ -55,7 +57,13 @@ exports.recibir = async (req, res) => {
   } catch (e) {
     return res.status(400).json({ message: e.message });
   }
-  if (!fecha) fecha = new Date().toISOString().slice(0, 19).replace("T", " ");
+  // Sin fecha → ahora; sólo fecha (lo que manda "Cobro de Créditos") → esa
+  // fecha con la hora actual. Siempre en hora LOCAL: antes el default salía
+  // de toISOString() (UTC) y un cobro a las 22:00 quedaba a la 01:00 del día
+  // siguiente; y con sólo la fecha el movimiento de caja quedaba a las 00:00.
+  if (!fecha || /^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    fecha = toLocalSQLDateTime(normalizeRegistroFecha(fecha));
+  }
 
   let monto = Math.round(Number(MontoRecibido));
   if (!(monto > 0)) {

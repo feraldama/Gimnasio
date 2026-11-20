@@ -102,3 +102,10 @@ describe("addDaysLocal", () => {
     assert.equal(addDaysLocal("no-es-fecha", 5), "");
   });
 });
+
+test("toLocalSQLDateTime usa la hora local, no UTC", () => {
+  const { toLocalSQLDateTime } = require("../utils/dateUtils");
+  // 22:30 local: en UTC-3 toISOString() daría el día siguiente a la 01:30.
+  const d = new Date(2026, 10, 20, 22, 30, 5);
+  assert.equal(toLocalSQLDateTime(d), "2026-11-20 22:30:05");
+});

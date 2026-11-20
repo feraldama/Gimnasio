@@ -27,4 +27,17 @@ function addDaysLocal(yyyymmdd, days) {
   return toLocalISODate(date);
 }
 
-module.exports = { todayLocalISO, toLocalISODate, addDaysLocal };
+/** "YYYY-MM-DD HH:MM:SS" en hora local (para columnas TIMESTAMP sin zona). */
+function toLocalSQLDateTime(date) {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${toLocalISODate(date)} ${hh}:${mi}:${ss}`;
+}
+
+module.exports = {
+  todayLocalISO,
+  toLocalISODate,
+  addDaysLocal,
+  toLocalSQLDateTime,
+};

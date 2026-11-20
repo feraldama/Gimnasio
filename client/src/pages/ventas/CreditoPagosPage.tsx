@@ -5,7 +5,12 @@ import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import Swal from "sweetalert2";
 import { getAllClientesSinPaginacion } from "../../services/clientes.service";
-import { formatCurrency, formatMiles, formatDateLocal } from "../../utils/utils";
+import {
+  formatCurrency,
+  formatMiles,
+  formatDateLocal,
+  todayLocalISO,
+} from "../../utils/utils";
 import { getVentasPendientesPorCliente } from "../../services/venta.service";
 import { useAuth } from "../../contexts/useAuth";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
@@ -48,9 +53,8 @@ const CreditoPagosPage = () => {
   const [creditosCancha, setCreditosCancha] = useState<CanchaCredito[]>([]);
   const [tipoPago, setTipoPago] = useState<string>("CO");
   const [montoPago, setMontoPago] = useState<number>(0);
-  const [fecha, setFecha] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
+  // Fecha local: toISOString() es UTC y después de las 21:00 daba mañana.
+  const [fecha, setFecha] = useState<string>(todayLocalISO());
   const [totalDeuda, setTotalDeuda] = useState<number>(0);
   const { user } = useAuth();
   const navigate = useNavigate();
