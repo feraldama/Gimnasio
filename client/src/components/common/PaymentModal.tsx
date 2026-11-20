@@ -96,6 +96,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       totalCost - efectivo - banco - otraTarjeta - cuentaCliente - voucher
     );
 
+  // Selecciona el texto DESPUÉS de que React pinte el valor autocompletado:
+  // si se selecciona en el mismo onFocus, el valor nuevo reemplaza la
+  // selección, el cursor queda al final y lo que se tipea se agrega
+  // (12.000 + "7" = 120.007) en vez de reemplazar.
+  const selectDespuesDeRender = (el: HTMLInputElement) => {
+    setTimeout(() => el.select(), 0);
+  };
+
   const onNumberClickModal = (label: string | number) => {
     let efe = efectivo;
     let ban = banco;
@@ -392,7 +400,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   //   setEfectivo(totalRest);
                   // setTotalRest(0);
                   // }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Number(e.target.value.replace(/\D/g, ""));
@@ -450,7 +458,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setBanco(totalRest);
                     setTotalRest(0);
                   }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Number(e.target.value.replace(/\D/g, ""));
@@ -508,7 +516,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setBancoDebito(totalRest);
                     setTotalRest(0);
                   }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Math.min(
@@ -569,7 +577,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setBancoCredito(totalRest);
                     setTotalRest(0);
                   }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Math.min(
@@ -678,7 +686,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setCuentaCliente(totalRest);
                     setTotalRest(0);
                   }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Number(e.target.value.replace(/\D/g, ""));
@@ -736,7 +744,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setVoucher(totalRest);
                     setTotalRest(0);
                   }
-                  e.target.select();
+                  selectDespuesDeRender(e.target);
                 }}
                 onChange={(e) => {
                   const newValue = Number(e.target.value.replace(/\D/g, ""));
