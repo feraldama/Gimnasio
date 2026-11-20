@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { sqlDiaOperativo } = require("../utils/diaOperativo");
 
 /**
  * Columnas "livianas" de producto para listados/búsqueda: omite el BLOB
@@ -482,7 +483,7 @@ const Producto = {
    *
    * Ganancia y margen se calculan en el frontend (Ganancia = Monto - Costo).
    */
-  getReporteMovimientosPorRango: (fechaDesde, fechaHasta) => {
+  getReporteMovimientosPorRango: (fechaDesde, fechaHasta, horaCorte = 0) => {
     return new Promise((resolve, reject) => {
       // Aliases internos de subquery en snake_case. El adapter de Postgres
       // auto-quota cualquier `AS PascalCase` como `AS "PascalCase"`, lo que
@@ -521,7 +522,7 @@ const Producto = {
               AS costo_vendido
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
-          WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
+          WHERE ${sqlDiaOperativo("vv.VentaFecha", horaCorte)} BETWEEN ? AND ?
           GROUP BY vp.ProductoId
         ) v ON v.ProductoId = p.ProductoId
         LEFT JOIN (
@@ -536,7 +537,7 @@ const Producto = {
             SUM(cp.CompraProductoCantidad * cp.CompraProductoPrecio) AS monto_comprado
           FROM compraproducto cp
           INNER JOIN compra cc ON cc.CompraId = cp.CompraId
-          WHERE DATE(cc.CompraFecha) BETWEEN ? AND ?
+          WHERE ${sqlDiaOperativo("cc.CompraFecha", horaCorte)} BETWEEN ? AND ?
           GROUP BY cp.ProductoId
         ) c ON c.ProductoId = p.ProductoId
         WHERE COALESCE(v.cant_vendida_cajas,     0) <> 0
@@ -584,7 +585,7 @@ const Producto = {
    *
    * Ordena DESC por total de unidades vendidas.
    */
-  getReporteMasVendidos: (fechaDesde, fechaHasta) => {
+  getReporteMasVendidos: (fechaDesde, fechaHasta, horaCorte = 0) => {
     return new Promise((resolve, reject) => {
       // La agregación va en subquery por ProductoId y recién después se
       // cruza con producto. Si se hacía GROUP BY sobre producto directo,
@@ -621,7 +622,7 @@ const Producto = {
                 * COALESCE(vp.VentaProductoPrecioPromedio, 0)) AS costo_vendido
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
-          WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
+          WHERE ${sqlDiaOperativo("vv.VentaFecha", horaCorte)} BETWEEN ? AND ?
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId

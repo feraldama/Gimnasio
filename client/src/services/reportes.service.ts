@@ -330,6 +330,8 @@ export interface ResumenLocalVentaSinCaja {
 export interface ResumenLocalResponse {
   fechaDesde: string;
   fechaHasta: string;
+  /** Hora de corte del día de trabajo (api/utils/diaOperativo.js). */
+  horaCorte?: number;
   locales: { LocalId: number; LocalNombre: string }[];
   ventas: ResumenLocalMontoRow[];
   suscripciones: ResumenLocalMontoRow[];

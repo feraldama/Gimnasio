@@ -1,5 +1,6 @@
 const db = require("../config/db");
 const { escapeLike } = require("../utils/sql");
+const { sqlDiaOperativoPago } = require("../utils/diaOperativo");
 
 const Pago = {
   getAll: () => {
@@ -239,12 +240,15 @@ Pago.getByClienteId = (clienteId) => {
 
 // Reporte de cobranza agrupado por día/semana/mes.
 // Devuelve por período: total Contado, POS, Transferencia, total general y cantidad.
-Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia") => {
+// Agrupa por día de trabajo (utils/diaOperativo.js): la hora sale del
+// movimiento de caja del cobro.
+Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia", horaCorte = 0) => {
   return new Promise((resolve, reject) => {
+    const dia = sqlDiaOperativoPago("p", horaCorte);
     const agrupaciones = {
-      dia: "TO_CHAR(p.PagoFecha, 'YYYY-MM-DD')",
-      semana: "TO_CHAR(p.PagoFecha, 'IYYY-\"W\"IW')",
-      mes: "TO_CHAR(p.PagoFecha, 'YYYY-MM')",
+      dia: `TO_CHAR(${dia}, 'YYYY-MM-DD')`,
+      semana: `TO_CHAR(${dia}, 'IYYY-"W"IW')`,
+      mes: `TO_CHAR(${dia}, 'YYYY-MM')`,
     };
     const groupExpr = agrupaciones[agruparPor] || agrupaciones.dia;
 
@@ -263,7 +267,7 @@ Pago.getReporte = (fechaDesde, fechaHasta, agruparPor = "dia") => {
         SUM(CASE WHEN p.PagoTipo = 'CR' THEN p.PagoMonto ELSE 0 END) AS credito,
         SUM(p.PagoMonto) AS total
       FROM pago p
-      WHERE DATE(p.PagoFecha) >= DATE(?) AND DATE(p.PagoFecha) <= DATE(?)
+      WHERE ${dia} BETWEEN DATE(?) AND DATE(?)
       GROUP BY ${groupExpr}
       ORDER BY periodo DESC
     `;

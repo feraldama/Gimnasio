@@ -50,6 +50,11 @@
 const db = require("../config/db");
 const Configuracion = require("../models/configuracion.model");
 const { sendError } = require("../utils/errors");
+const {
+  obtenerHoraCorte,
+  sqlDiaOperativo,
+  sqlDiaOperativoPago,
+} = require("../utils/diaOperativo");
 const { armarTablero, mesAnterior } = require("../utils/tablero");
 const {
   armarCrecimiento,
@@ -84,14 +89,24 @@ exports.tableroMensual = async (req, res) => {
       return Number(rows[0]?.total || 0);
     };
 
+    // Mes por día de trabajo (utils/diaOperativo.js): lo cobrado en la
+    // madrugada del 1° cuenta para el mes anterior, igual que en los reportes
+    // por rango. Las columnas DATE sin vínculo a caja (ventacreditopago,
+    // cancha_reserva) siguen por calendario.
+    const horaCorte = await obtenerHoraCorte();
+    const diaPago = sqlDiaOperativoPago("pg0", horaCorte);
+    const diaVenta = sqlDiaOperativo("v.VentaFecha", horaCorte);
+    const diaCobroCancha = sqlDiaOperativo("CanchaCreditoPagoFecha", horaCorte);
+    const diaCaja = sqlDiaOperativo("r.RegistroDiarioCajaFecha", horaCorte);
+
     // Ingresos cobrados de un mes por línea, más egresos por categoría.
     async function totalesDeMes(a, m) {
       // Gimnasio: `pago` ya es plata cobrada, no hay nada que descontar.
       const gimnasio = await escalar(
-        `SELECT COALESCE(SUM(PagoMonto), 0)::bigint AS total
-           FROM pago
-          WHERE EXTRACT(YEAR FROM PagoFecha)::int = ?
-            AND EXTRACT(MONTH FROM PagoFecha)::int = ?`,
+        `SELECT COALESCE(SUM(pg0.PagoMonto), 0)::bigint AS total
+           FROM pago pg0
+          WHERE EXTRACT(YEAR FROM ${diaPago})::int = ?
+            AND EXTRACT(MONTH FROM ${diaPago})::int = ?`,
         [a, m]
       );
 
@@ -122,8 +137,8 @@ exports.tableroMensual = async (req, res) => {
                     ON vcp.VentaCreditoId = vc.VentaCreditoId
               WHERE vc.VentaId = v.VentaId
            ) cp ON true
-          WHERE EXTRACT(YEAR FROM v.VentaFecha)::int = ?
-            AND EXTRACT(MONTH FROM v.VentaFecha)::int = ?`,
+          WHERE EXTRACT(YEAR FROM ${diaVenta})::int = ?
+            AND EXTRACT(MONTH FROM ${diaVenta})::int = ?`,
         [a, m]
       );
       // Cobros de crédito por la fecha en que entró la plata.
@@ -187,8 +202,8 @@ exports.tableroMensual = async (req, res) => {
       const canchaCreditoCobrado = await escalar(
         `SELECT COALESCE(SUM(CanchaCreditoPagoMonto), 0)::bigint AS total
            FROM cancha_credito_pago
-          WHERE EXTRACT(YEAR FROM CanchaCreditoPagoFecha)::int = ?
-            AND EXTRACT(MONTH FROM CanchaCreditoPagoFecha)::int = ?`,
+          WHERE EXTRACT(YEAR FROM ${diaCobroCancha})::int = ?
+            AND EXTRACT(MONTH FROM ${diaCobroCancha})::int = ?`,
         [a, m]
       );
 
@@ -203,8 +218,8 @@ exports.tableroMensual = async (req, res) => {
             WHERE r.TipoGastoId = 1
               AND r.TipoGastoGrupoId <> 2
               AND r.TipoGastoGrupoId <> 10
-              AND EXTRACT(YEAR FROM r.RegistroDiarioCajaFecha)::int = ?
-              AND EXTRACT(MONTH FROM r.RegistroDiarioCajaFecha)::int = ?
+              AND EXTRACT(YEAR FROM ${diaCaja})::int = ?
+              AND EXTRACT(MONTH FROM ${diaCaja})::int = ?
             GROUP BY categoria`,
           [a, m]
         )

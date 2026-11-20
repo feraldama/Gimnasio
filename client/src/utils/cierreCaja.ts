@@ -48,6 +48,33 @@ export function toLocalDateStr(fechaRegistro: string): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Día de trabajo (YYYY-MM-DD) de un movimiento: lo registrado antes de la hora
+ * de corte cuenta para el día anterior, así una noche de 15:00 a 02:00 no
+ * queda partida en dos días. horaCorte 0 = día calendario. La misma regla está
+ * en api/utils/diaOperativo.js; el backend manda la hora vigente (`horaCorte`)
+ * junto con los datos de cada reporte.
+ */
+export function diaOperativoStr(fechaRegistro: string, horaCorte = 0): string {
+  const d = new Date(fechaRegistro);
+  // 00:00:00.000 exacto = movimiento guardado sólo con fecha (compras, cobros
+  // de suscripción viejos): queda en su día, igual que en el backend.
+  const sinHora =
+    d.getHours() === 0 &&
+    d.getMinutes() === 0 &&
+    d.getSeconds() === 0 &&
+    d.getMilliseconds() === 0;
+  if (horaCorte > 0 && !sinHora) d.setHours(d.getHours() - horaCorte);
+  return toLocalDateStr(d.toISOString());
+}
+
+/** Leyenda para los PDF: "Días de 05:00 a 05:00 del día siguiente." */
+export function leyendaDiaOperativo(horaCorte = 0): string {
+  if (!horaCorte) return "";
+  const h = `${String(horaCorte).padStart(2, "0")}:00`;
+  return `Cada día va de ${h} a ${h} del día siguiente.`;
+}
+
 export function formatDateDDMMYYYY(fecha: Date | string): string {
   const d =
     typeof fecha === "string"
@@ -147,6 +174,8 @@ export function buildResumenesCierre(
   registros: RegistroDiarioCajaRow[],
   fechaDesde: string,
   fechaHasta: string,
+  /** Hora de corte del día de trabajo; 0 = por fecha calendario del cierre. */
+  horaCorte = 0,
 ): ResumenCierre[] {
   if (registros.length === 0) return [];
 
@@ -157,9 +186,13 @@ export function buildResumenesCierre(
   const resumenes: ResumenCierre[] = [];
 
   for (const cierreReg of cierres) {
-    const fechaCierreLocal = toLocalDateStr(cierreReg.RegistroDiarioCajaFecha);
-    if (fechaCierreLocal < fechaDesde || fechaCierreLocal > fechaHasta)
-      continue;
+    // Un turno cuenta para el día de trabajo de su cierre: uno de 15:00 a
+    // 02:00 es del día en que abrió si el corte es posterior a las 02:00.
+    const diaCierre = diaOperativoStr(
+      cierreReg.RegistroDiarioCajaFecha,
+      horaCorte,
+    );
+    if (diaCierre < fechaDesde || diaCierre > fechaHasta) continue;
     const registrosCajaUsuario = registros.filter(
       (r) =>
         r.CajaId === cierreReg.CajaId && r.UsuarioId === cierreReg.UsuarioId,
@@ -187,8 +220,16 @@ export function buildResumenesCierre(
     );
 
     const fechaCierreDate = new Date(cierreReg.RegistroDiarioCajaFecha);
+    // Si cerró pasada la medianoche se muestra el día de trabajo y, entre
+    // paréntesis, cuándo cerró: "01/10/2026 (cerró 02/10 02:05)".
+    const diaCierreLocal = toLocalDateStr(cierreReg.RegistroDiarioCajaFecha);
+    const hhmm = `${String(fechaCierreDate.getHours()).padStart(2, "0")}:${String(fechaCierreDate.getMinutes()).padStart(2, "0")}`;
+    const fechaCierre =
+      diaCierre === diaCierreLocal
+        ? formatDateDDMMYYYY(fechaCierreDate)
+        : `${formatDateDDMMYYYY(diaCierre)} (cerró ${formatDateDDMMYYYY(fechaCierreDate).slice(0, 5)} ${hhmm})`;
     resumenes.push({
-      fechaCierre: formatDateDDMMYYYY(fechaCierreDate),
+      fechaCierre,
       fechaCierreDate,
       aperturaId: aperturaReg.RegistroDiarioCajaId,
       cierreId: cierreReg.RegistroDiarioCajaId,

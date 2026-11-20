@@ -21,6 +21,7 @@ import { loadPdf } from "./lazyPdf";
 import { formatMiles } from "./utils";
 import { desglosarIngresos, ORIGENES, type ControlEfectivo } from "./cajaOrigen";
 import type { ResumenLocalResponse } from "../services/reportes.service";
+import { diaOperativoStr, leyendaDiaOperativo } from "./cierreCaja";
 
 /** Cierre ya armado (apertura → cierre) por la pantalla de reportes. */
 export interface CierreLocal {
@@ -46,11 +47,6 @@ const TIPO_LABEL: Record<string, string> = {
   CR: "Crédito",
 };
 
-function fechaLocal(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 function ddmmyyyy(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
   return `${d}/${m}/${y}`;
@@ -61,10 +57,12 @@ export async function generarPDFResumenLocal(
   cierres: CierreLocal[],
 ) {
   const { fechaDesde, fechaHasta } = data;
+  const horaCorte = data.horaCorte ?? 0;
 
-  // Movimientos de caja del período (la API trae un día de margen).
+  // Movimientos de caja del período por día de trabajo (la API trae un día
+  // de margen, que cubre la madrugada posterior a fechaHasta).
   const caja = data.caja.filter((r) => {
-    const f = fechaLocal(r.RegistroDiarioCajaFecha);
+    const f = diaOperativoStr(r.RegistroDiarioCajaFecha, horaCorte);
     return f >= fechaDesde && f <= fechaHasta;
   });
 
@@ -220,7 +218,11 @@ export async function generarPDFResumenLocal(
   doc.setFontSize(16);
   doc.text("Resumen por local", 14, 16);
   doc.setFontSize(10);
-  doc.text(`Período: ${ddmmyyyy(fechaDesde)} al ${ddmmyyyy(fechaHasta)}`, 14, 23);
+  doc.text(
+    `Período: ${ddmmyyyy(fechaDesde)} al ${ddmmyyyy(fechaHasta)}  ${leyendaDiaOperativo(horaCorte)}`,
+    14,
+    23,
+  );
 
   autoTable(doc, {
     head: [["Concepto", ...columnas.map((c) => c.nombre), "TOTAL GENERAL"]],

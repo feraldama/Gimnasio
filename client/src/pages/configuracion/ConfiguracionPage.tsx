@@ -62,7 +62,9 @@ export default function ConfiguracionPage() {
       Swal.fire({
         icon: "error",
         title: "Error",
-        text: e instanceof Error ? e.message : "No se pudo guardar",
+        // El service lanza el body de la respuesta ({ message }), no un Error.
+        text:
+          (e as { message?: string } | null)?.message || "No se pudo guardar",
       });
     } finally {
       setSaving(null);

@@ -1,4 +1,5 @@
 const RegistroDiarioCaja = require("../models/registrodiariocaja.model");
+const { obtenerHoraCorte } = require("../utils/diaOperativo");
 const Correccion = require("../models/correccionCaja.model");
 const { contexto } = require("../utils/contextoCorreccion");
 const { validarMotivo } = require("../utils/correccionCaja");
@@ -114,7 +115,10 @@ exports.getByDateRange = async (req, res) => {
       fechaHastaStr,
       limit
     );
-    res.json({ data });
+    // El cliente recorta por día de trabajo (los registros traen un día de
+    // margen a cada lado, que cubre la madrugada posterior a fechaHasta).
+    const horaCorte = await obtenerHoraCorte();
+    res.json({ data, horaCorte });
   } catch (error) {
     console.error("Error al obtener registros por rango:", error);
     sendError(res, error, 500);

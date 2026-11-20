@@ -1,5 +1,6 @@
 const Producto = require("../models/producto.model");
 const { sendError } = require("../utils/errors");
+const { obtenerHoraCorte } = require("../utils/diaOperativo");
 
 function extractProductoFilters(query) {
   const filters = {};
@@ -224,7 +225,8 @@ exports.getReporteMovimientos = async (req, res) => {
     }
     const { productos } = await Producto.getReporteMovimientosPorRango(
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      await obtenerHoraCorte()
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {
@@ -255,7 +257,8 @@ exports.getReporteMasVendidos = async (req, res) => {
     }
     const { productos } = await Producto.getReporteMasVendidos(
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      await obtenerHoraCorte()
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {

@@ -4,6 +4,8 @@ const { todayLocalISO, addDaysLocal } = require("../utils/dateUtils");
 const { PAGO_TIPOS, getTipoGastoGrupoId, getLabel } = require("../constants/pagoTipos");
 const { calcularEstadoPorFechas } = require("../utils/suscripcionEstado");
 const { sendError } = require("../utils/errors");
+const { obtenerHoraCorte } = require("../utils/diaOperativo");
+const { normalizeRegistroFecha } = require("../utils/registroFecha");
 const { anularPagoVinculadoTx } = require("../models/correccionCaja.model");
 
 /**
@@ -254,7 +256,10 @@ exports.createLote = async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             apertura.CajaId,
-            p.PagoFecha || todayLocalISO(),
+            // Fecha del pago con la hora real del cobro: con sólo la fecha
+            // quedaba a las 00:00 y no se podía ubicar en el día de trabajo
+            // (utils/diaOperativo.js).
+            normalizeRegistroFecha(p.PagoFecha || todayLocalISO()),
             2,
             tipoGastoGrupoId,
             detalle,
@@ -435,7 +440,7 @@ exports.create = async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           apertura.CajaId,
-          pagoFecha,
+          normalizeRegistroFecha(pagoFecha), // con hora real, ver pago.create
           2,
           tipoGastoGrupoId,
           detalle,
@@ -644,8 +649,14 @@ exports.getReporte = async (req, res) => {
     const agruparPor = ["dia", "semana", "mes"].includes(req.query.agruparPor)
       ? req.query.agruparPor
       : "dia";
-    const reporte = await Pago.getReporte(fechaDesde, fechaHasta, agruparPor);
-    res.json({ data: reporte, agruparPor, fechaDesde, fechaHasta });
+    const horaCorte = await obtenerHoraCorte();
+    const reporte = await Pago.getReporte(
+      fechaDesde,
+      fechaHasta,
+      agruparPor,
+      horaCorte
+    );
+    res.json({ data: reporte, agruparPor, fechaDesde, fechaHasta, horaCorte });
   } catch (error) {
     sendError(res, error, 500);
   }

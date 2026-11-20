@@ -88,6 +88,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     totalCost,
   ]);
 
+  // Máximo que se puede cobrar con una tarjeta: lo que falta pagar descontando
+  // los demás medios (la tarjeta nunca genera vuelto).
+  const maxTarjeta = (otraTarjeta: number) =>
+    Math.max(
+      0,
+      totalCost - efectivo - banco - otraTarjeta - cuentaCliente - voucher
+    );
+
   const onNumberClickModal = (label: string | number) => {
     let efe = efectivo;
     let ban = banco;
@@ -125,7 +133,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         vou;
       setBanco(ban);
     } else if (pagoTipo === "D") {
-      deb = append(bancoDebito, label);
+      deb = Math.min(append(bancoDebito, label), maxTarjeta(bancoCredito));
       totalResto =
         totalCost -
         efectivo -
@@ -136,7 +144,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         vou;
       setBancoDebito(deb);
     } else if (pagoTipo === "CR") {
-      cred = append(bancoCredito, label);
+      cred = Math.min(append(bancoCredito, label), maxTarjeta(bancoDebito));
       totalResto =
         totalCost -
         efectivo -
@@ -493,8 +501,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </label>
               <input
                 type="text"
-                readOnly
-                value={formatMiles(bancoDebito)}
+                value={bancoDebito ? formatMiles(bancoDebito) : ""}
                 onFocus={(e) => {
                   setPagoTipoLocal("D");
                   if (bancoDebito === 0) {
@@ -502,9 +509,22 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setTotalRest(0);
                   }
                   e.target.select();
-                  setTimeout(() => {
-                    document.getElementById("venta-nro-pos-input")?.focus();
-                  }, 100);
+                }}
+                onChange={(e) => {
+                  const newValue = Math.min(
+                    Number(e.target.value.replace(/\D/g, "")),
+                    maxTarjeta(bancoCredito)
+                  );
+                  setBancoDebito(newValue);
+                  setTotalRest(
+                    totalCost -
+                      efectivo -
+                      banco -
+                      newValue -
+                      bancoCredito -
+                      cuentaCliente -
+                      voucher
+                  );
                 }}
                 style={{
                   width: 120,
@@ -542,8 +562,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </label>
               <input
                 type="text"
-                readOnly
-                value={formatMiles(bancoCredito)}
+                value={bancoCredito ? formatMiles(bancoCredito) : ""}
                 onFocus={(e) => {
                   setPagoTipoLocal("CR");
                   if (bancoCredito === 0) {
@@ -551,9 +570,22 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     setTotalRest(0);
                   }
                   e.target.select();
-                  setTimeout(() => {
-                    document.getElementById("venta-nro-pos-input")?.focus();
-                  }, 100);
+                }}
+                onChange={(e) => {
+                  const newValue = Math.min(
+                    Number(e.target.value.replace(/\D/g, "")),
+                    maxTarjeta(bancoDebito)
+                  );
+                  setBancoCredito(newValue);
+                  setTotalRest(
+                    totalCost -
+                      efectivo -
+                      banco -
+                      bancoDebito -
+                      newValue -
+                      cuentaCliente -
+                      voucher
+                  );
                 }}
                 style={{
                   width: 120,

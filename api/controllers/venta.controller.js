@@ -1,5 +1,6 @@
 const Venta = require("../models/venta.model");
 const { sendError } = require("../utils/errors");
+const { obtenerHoraCorte } = require("../utils/diaOperativo");
 const db = require("../config/db");
 const { confirmarVentaTx } = require("../models/ventaTx");
 const { anularVentaTx } = require("../models/correccionCaja.model");
@@ -514,7 +515,8 @@ exports.getReporteVentasPorCliente = async (req, res) => {
     const reporte = await Venta.getReporteVentasPorCliente(
       clienteId,
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      await obtenerHoraCorte()
     );
 
     res.json({

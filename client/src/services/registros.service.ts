@@ -92,7 +92,11 @@ export const getRegistrosDiariosCajaPorRango = async (
     const response = await api.get("/registrodiariocaja/rango", {
       params: { fechaDesde, fechaHasta, limit: 10000 },
     });
-    return response.data as { data: RegistroDiarioCajaRow[] };
+    return response.data as {
+      data: RegistroDiarioCajaRow[];
+      /** Hora de corte del día de trabajo (api/utils/diaOperativo.js). */
+      horaCorte?: number;
+    };
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
     throw (

@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { sqlDiaOperativo } = require("../utils/diaOperativo");
 
 /**
  * Normaliza VentaFecha para que siempre incluya fecha y hora.
@@ -510,7 +511,7 @@ const Venta = {
 
   // Obtener reporte de ventas por cliente y rango de fechas
   // Si clienteId es "TODOS", devuelve ventas de todos los clientes
-  getReporteVentasPorCliente: (clienteId, fechaDesde, fechaHasta) => {
+  getReporteVentasPorCliente: (clienteId, fechaDesde, fechaHasta, horaCorte = 0) => {
     return new Promise((resolve, reject) => {
       const esTodos = String(clienteId).toUpperCase() === "TODOS";
 
@@ -528,7 +529,7 @@ const Venta = {
           LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
           LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-          WHERE DATE(v.VentaFecha) BETWEEN ? AND ?
+          WHERE ${sqlDiaOperativo("v.VentaFecha", horaCorte)} BETWEEN ? AND ?
           ${esTodos ? "" : "AND v.ClienteId = ?"}
           ORDER BY v.VentaFecha ASC, v.VentaId ASC
         `;

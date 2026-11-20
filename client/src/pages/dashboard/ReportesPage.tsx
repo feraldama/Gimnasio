@@ -17,7 +17,9 @@ import { getRegistrosDiariosCajaPorRango } from "../../services/registros.servic
 import {
   buildResumenesCierre,
   type ResumenCierre,
+  diaOperativoStr,
   formatDateDDMMYYYY,
+  leyendaDiaOperativo,
   toLocalDateStr,
 } from "../../utils/cierreCaja";
 import {
@@ -209,6 +211,9 @@ const ReportesPage: React.FC = () => {
   });
 
   const [resumenesCierre, setResumenesCierre] = useState<ResumenCierre[]>([]);
+  // Hora de corte del día de trabajo con que se armó el último cierre por
+  // rango (la manda el backend); se usa en la leyenda del PDF.
+  const [horaCorteCierre, setHoraCorteCierre] = useState(0);
   const [paginaCierre, setPaginaCierre] = useState(1);
   const [fechaDesdeCierre, setFechaDesdeCierre] = useState(() => getHoyISO());
   const [fechaHastaCierre, setFechaHastaCierre] = useState(() => getHoyISO());
@@ -1189,7 +1194,7 @@ const ReportesPage: React.FC = () => {
     setPaginaCierre(1);
     setCierreAbierto(null);
     try {
-      const { data } = await getRegistrosDiariosCajaPorRango(
+      const { data, horaCorte = 0 } = await getRegistrosDiariosCajaPorRango(
         fechaDesdeCierre,
         fechaHastaCierre,
       );
@@ -1198,7 +1203,9 @@ const ReportesPage: React.FC = () => {
         lista,
         fechaDesdeCierre,
         fechaHastaCierre,
+        horaCorte,
       );
+      setHoraCorteCierre(horaCorte);
       setResumenesCierre(res);
     } catch (e) {
       setError(
@@ -1319,6 +1326,7 @@ const ReportesPage: React.FC = () => {
       // El endpoint /pagos/reporte responde { data: { filas, totales }, agruparPor, ... }
       const payload = res?.data ?? res ?? {};
       const filas: CobranzaPeriodoRow[] = payload.filas || [];
+      const horaCorteCobranza: number = Number(res?.horaCorte) || 0;
       const totales = payload.totales || {
         contado: 0,
         pos: 0,
@@ -1333,7 +1341,7 @@ const ReportesPage: React.FC = () => {
       doc.text(`Cobranza de suscripciones por ${agruparCobranzaPor}`, 14, 18);
       doc.setFontSize(10);
       doc.text(
-        `Período: ${formatearFecha(fechaDesdeCobranza)} al ${formatearFecha(fechaHastaCobranza)}`,
+        `Período: ${formatearFecha(fechaDesdeCobranza)} al ${formatearFecha(fechaHastaCobranza)}  ${leyendaDiaOperativo(horaCorteCobranza)}`,
         14,
         25,
       );
@@ -1531,6 +1539,7 @@ const ReportesPage: React.FC = () => {
         data.caja,
         fechaDesdeLocal,
         fechaHastaLocal,
+        data.horaCorte ?? 0,
       );
       await generarPDFResumenLocal(data, cierres);
       setReporteActivo(null);
@@ -1554,19 +1563,23 @@ const ReportesPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await getRegistrosDiariosCajaPorRango(
+      const { data, horaCorte = 0 } = await getRegistrosDiariosCajaPorRango(
         fechaDesdeOrigen,
         fechaHastaOrigen,
       );
-      // El endpoint trae un día de margen a cada lado: se recorta por fecha local.
+      // El endpoint trae un día de margen a cada lado: se recorta por día de
+      // trabajo (lo de la madrugada cuenta para el día anterior).
+      const diaDe = (r: { RegistroDiarioCajaFecha: string }) =>
+        diaOperativoStr(r.RegistroDiarioCajaFecha, horaCorte);
       const lista = (Array.isArray(data) ? data : []).filter((r) => {
-        const f = toLocalDateStr(r.RegistroDiarioCajaFecha);
+        const f = diaDe(r);
         return f >= fechaDesdeOrigen && f <= fechaHastaOrigen;
       });
 
       // Clave ordenable + etiqueta del período (semana = lunes que la inicia).
-      const periodoDe = (fechaISO: string): { key: string; label: string } => {
-        const d = new Date(fechaISO);
+      // Recibe el día de trabajo (YYYY-MM-DD), no la fecha del registro.
+      const periodoDe = (dia: string): { key: string; label: string } => {
+        const d = new Date(`${dia}T12:00:00`);
         if (agruparOrigenPor === "mes") {
           const m = String(d.getMonth() + 1).padStart(2, "0");
           return { key: `${d.getFullYear()}-${m}`, label: `${m}/${d.getFullYear()}` };
@@ -1579,12 +1592,12 @@ const ReportesPage: React.FC = () => {
             label: `Sem. ${formatDateDDMMYYYY(lunes)}`,
           };
         }
-        return { key: toLocalDateStr(fechaISO), label: formatDateDDMMYYYY(d) };
+        return { key: dia, label: formatDateDDMMYYYY(d) };
       };
 
       const porPeriodo = new Map<string, { label: string; regs: typeof lista }>();
       for (const r of lista) {
-        const { key, label } = periodoDe(r.RegistroDiarioCajaFecha);
+        const { key, label } = periodoDe(diaDe(r));
         const g = porPeriodo.get(key) ?? { label, regs: [] };
         g.regs.push(r);
         porPeriodo.set(key, g);
@@ -1609,7 +1622,7 @@ const ReportesPage: React.FC = () => {
       doc.text(`Ingresos por origen (por ${etiquetaAgrupar})`, 14, 16);
       doc.setFontSize(10);
       doc.text(
-        `Período: ${formatearFecha(fechaDesdeOrigen)} al ${formatearFecha(fechaHastaOrigen)}`,
+        `Período: ${formatearFecha(fechaDesdeOrigen)} al ${formatearFecha(fechaHastaOrigen)}  ${leyendaDiaOperativo(horaCorte)}`,
         14,
         23,
       );
@@ -1701,6 +1714,14 @@ const ReportesPage: React.FC = () => {
       14,
       14,
     );
+    if (horaCorteCierre) {
+      doc.setFontSize(9);
+      doc.text(
+        `${leyendaDiaOperativo(horaCorteCierre)} Cada turno cuenta para el día de trabajo en que cerró.`,
+        14,
+        19,
+      );
+    }
     const rows = resumenesCierre.map((r) => [
       r.fechaCierre,
       r.cajaDescripcion,
@@ -2104,6 +2125,8 @@ const ReportesPage: React.FC = () => {
               <p className="text-xs text-slate-500 mb-2">
                 {resumenesCierre.length} cierre(s) en el período. Página{" "}
                 {paginaCierre} de {totalPaginasCierre}.
+                {horaCorteCierre > 0 &&
+                  ` ${leyendaDiaOperativo(horaCorteCierre)}`}
               </p>
               <div className="overflow-x-auto -mx-2 mb-4">
                 <table className="w-full border-collapse text-sm min-w-[1100px]">

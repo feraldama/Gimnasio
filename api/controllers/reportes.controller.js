@@ -12,6 +12,11 @@ const Suscripcion = require("../models/suscripcion.model");
 const { toLocalISODate, addDaysLocal } = require("../utils/dateUtils");
 const { SQL_DESDE_CON_APERTURAS } = require("../utils/turnoCaja");
 const { sendError } = require("../utils/errors");
+const {
+  obtenerHoraCorte,
+  sqlDiaOperativo,
+  sqlDiaOperativoPago,
+} = require("../utils/diaOperativo");
 
 // Horario operativo de Cancha: configurable via `configuracion`. Defaults
 // pensados como horario tipico de un gym/club paraguayo. Leer las claves
@@ -129,6 +134,12 @@ exports.resumenLocal = async (req, res) => {
   try {
     const { desde, hasta, error } = parseRangoFechas(req);
     if (error) return res.status(400).json({ error });
+    // Día de trabajo: lo vendido antes de la hora de corte cuenta para el día
+    // anterior (utils/diaOperativo.js). Los pagos toman la hora de su
+    // movimiento de caja.
+    const horaCorte = await obtenerHoraCorte();
+    const diaVenta = sqlDiaOperativo("v.VentaFecha", horaCorte);
+    const diaPago = sqlDiaOperativoPago("p", horaCorte);
 
     const queryAsync = (sql, params) =>
       new Promise((resolve, reject) => {
@@ -144,7 +155,7 @@ exports.resumenLocal = async (req, res) => {
              COUNT(*)::int AS cantidad,
              COALESCE(SUM(v.Total), 0)::bigint AS total
       FROM venta v
-      WHERE DATE(v.VentaFecha) BETWEEN ?::date AND ?::date
+      WHERE ${diaVenta} BETWEEN ?::date AND ?::date
       GROUP BY v.AlmacenId, v.VentaTipo
     `;
     const sqlSuscripciones = `
@@ -154,7 +165,7 @@ exports.resumenLocal = async (req, res) => {
              COALESCE(SUM(p.PagoMonto), 0)::bigint AS total
       FROM pago p
       LEFT JOIN usuario u ON u.UsuarioId = p.PagoUsuarioId
-      WHERE p.PagoFecha BETWEEN ?::date AND ?::date
+      WHERE ${diaPago} BETWEEN ?::date AND ?::date
       GROUP BY COALESCE(u.LocalId, 0), p.PagoTipo
     `;
     // Ventas cobradas (algo entregado) que no dejaron ningún movimiento en
@@ -165,7 +176,7 @@ exports.resumenLocal = async (req, res) => {
       SELECT v.VentaId, v.VentaFecha, v.AlmacenId AS local_id, v.VentaTipo,
              v.Total, v.VentaEntrega, v.VentaUsuario
       FROM venta v
-      WHERE DATE(v.VentaFecha) BETWEEN ?::date AND ?::date
+      WHERE ${diaVenta} BETWEEN ?::date AND ?::date
         AND v.VentaEntrega > 0
         AND NOT EXISTS (
           SELECT 1 FROM registrodiariocaja r
@@ -231,6 +242,7 @@ exports.resumenLocal = async (req, res) => {
     res.json({
       fechaDesde: desde,
       fechaHasta: hasta,
+      horaCorte,
       locales,
       ventas,
       suscripciones,
@@ -376,14 +388,20 @@ exports.cantinaDiario = async (req, res) => {
     const { anio, mes, error } = parseAnioMes(req);
     if (error) return res.status(400).json({ error });
 
+    // Días de trabajo: la madrugada cuenta para el día anterior
+    // (utils/diaOperativo.js).
+    const horaCorte = await obtenerHoraCorte();
+    const diaVenta = sqlDiaOperativo("VentaFecha", horaCorte);
+    const diaCaja = sqlDiaOperativo("RegistroDiarioCajaFecha", horaCorte);
+
     // Recaudado por dia (todas las ventas, no solo CO).
     const sqlVentas = `
-      SELECT EXTRACT(DAY FROM VentaFecha)::int AS dia,
+      SELECT EXTRACT(DAY FROM ${diaVenta})::int AS dia,
              COALESCE(SUM(Total), 0)::bigint AS recaudado,
              COUNT(*)::int AS cantidad
       FROM venta
-      WHERE EXTRACT(YEAR FROM VentaFecha)::int = ?
-        AND EXTRACT(MONTH FROM VentaFecha)::int = ?
+      WHERE EXTRACT(YEAR FROM ${diaVenta})::int = ?
+        AND EXTRACT(MONTH FROM ${diaVenta})::int = ?
       GROUP BY dia
     `;
     // Movimiento NETO de caja del dia.
@@ -406,15 +424,15 @@ exports.cantinaDiario = async (req, res) => {
     // mensual (controllers/tablero.controller.js), que si separa cobrado de
     // egresos con las exclusiones correctas.
     const sqlCaja = `
-      SELECT EXTRACT(DAY FROM RegistroDiarioCajaFecha)::int AS dia,
+      SELECT EXTRACT(DAY FROM ${diaCaja})::int AS dia,
              COALESCE(SUM(
                CASE WHEN TipoGastoId = 2
                     THEN RegistroDiarioCajaMonto
                     ELSE -RegistroDiarioCajaMonto END
              ), 0)::bigint AS efectivo
       FROM registrodiariocaja
-      WHERE EXTRACT(YEAR FROM RegistroDiarioCajaFecha)::int = ?
-        AND EXTRACT(MONTH FROM RegistroDiarioCajaFecha)::int = ?
+      WHERE EXTRACT(YEAR FROM ${diaCaja})::int = ?
+        AND EXTRACT(MONTH FROM ${diaCaja})::int = ?
       GROUP BY dia
     `;
     // Valor del stock (snapshot actual).
