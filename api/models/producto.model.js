@@ -376,7 +376,7 @@ const Producto = {
         if (campo === "ProductoImagen") {
           const imagenBuffer = productoData.ProductoImagen
             ? Buffer.from(productoData.ProductoImagen, "base64")
-            : null;
+            : Buffer.from([]); // columna NOT NULL: "sin imagen" = bytea vacío (igual que create)
           updateFields.push(`${campo} = ?`);
           values.push(imagenBuffer);
         } else {
