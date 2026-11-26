@@ -1,5 +1,5 @@
 // Corrección de caja: ver turnos, ver un turno con sus ventas/cobros, y
-// corregir (medio de cobro, anular venta, cargar venta faltante).
+// corregir (medio de cobro, anular venta, cargar venta o egreso faltante).
 //
 // Permisos (menú CORRECCIONCAJA, migración 023):
 //   leer      → entrar a la pantalla (un cajero sólo ve sus propios turnos).
@@ -9,7 +9,7 @@
 // Admin (UsuarioIsAdmin = 'S') es supervisor.
 const db = require("../config/db");
 const Correccion = require("../models/correccionCaja.model");
-const { validarMotivo, MEDIOS } = require("../utils/correccionCaja");
+const { validarMotivo, validarEgresoFaltante, MEDIOS } = require("../utils/correccionCaja");
 const { contexto, tienePermiso } = require("../utils/contextoCorreccion");
 const { turnoDeApertura, registrosDelTurno } = require("../utils/turnoCaja");
 const { diferenciaAlCerrar } = require("../utils/ticketCierre");
@@ -288,6 +288,13 @@ exports.getTurno = async (req, res) => {
         [aperturaId]
       );
 
+      // Tipos de egreso para "Cargar egreso que faltó" (sin apertura/cierre).
+      const [gruposEgreso] = await conn.query(
+        `SELECT TipoGastoGrupoId, TipoGastoGrupoDescripcion FROM tipogastogrupo
+         WHERE TipoGastoId = 1 AND TipoGastoGrupoId <> 2
+         ORDER BY TipoGastoGrupoDescripcion`
+      );
+
       const permiso = ctx.autorizar(turno);
       return {
         turno: {
@@ -313,6 +320,7 @@ exports.getTurno = async (req, res) => {
         motivoNoCorregible: permiso.ok ? null : permiso.message,
         esSupervisor: ctx.esSupervisor,
         medios: MEDIOS,
+        gruposEgreso,
       };
     });
     if (!data) return res.status(404).json({ message: "Turno no encontrado" });
@@ -444,5 +452,31 @@ exports.cargarVenta = async (req, res) => {
     res.status(201).json({ message: "Venta cargada en el turno", data: r });
   } catch (error) {
     responderError(res, error, "Error cargando venta faltante:");
+  }
+};
+
+// POST /correcciones/turno/:aperturaId/egreso
+//   { motivo, TipoGastoGrupoId, RegistroDiarioCajaMonto, RegistroDiarioCajaDetalle? }
+// Egreso que se pagó con plata del cajón pero nunca se registró: se carga en
+// su turno cerrado para que ese cierre quede cuadrado.
+exports.cargarEgreso = async (req, res) => {
+  const v = validarMotivo(req.body?.motivo);
+  if (v.error) return res.status(400).json({ message: v.error });
+  const ve = validarEgresoFaltante(req.body);
+  if (ve.error) return res.status(400).json({ message: ve.error });
+  try {
+    const r = await enTransaccion(async (conn) => {
+      const ctx = await contexto(conn, req.user);
+      return Correccion.cargarEgresoEnTurnoTx(conn, {
+        aperturaId: Number(req.params.aperturaId),
+        motivo: v.motivo,
+        usuarioId: req.user.id,
+        autorizar: ctx.autorizar,
+        egreso: ve.egreso,
+      });
+    });
+    res.status(201).json({ message: "Egreso cargado en el turno", data: r });
+  } catch (error) {
+    responderError(res, error, "Error cargando egreso faltante:");
   }
 };

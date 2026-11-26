@@ -119,6 +119,7 @@
       <li><a href="#medio">Cambiar el medio de cobro</a></li>
       <li><a href="#anular">Anular una venta duplicada</a></li>
       <li><a href="#cargar">Cargar una venta que faltó</a></li>
+      <li><a href="#egreso">Cargar un egreso que faltó</a></li>
       <li><a href="#historial">Historial y reportes</a></li>
       <li><a href="#faq">Preguntas frecuentes</a></li>
       <li><a href="#permisos">Para el administrador: permisos</a></li>
@@ -133,7 +134,7 @@
         <thead><tr><th>Pantalla</th><th>Dónde está en el menú</th><th>Para qué</th><th>Quién la usa</th></tr></thead>
         <tbody>
           <tr><td class="ui">Ventas y cobros del día</td><td>Arriba, debajo de Apertura/Cierre de Caja</td><td>Ver si algo ya se cargó antes de cargarlo de nuevo</td><td>Cajeros</td></tr>
-          <tr><td class="ui">Corrección de caja</td><td>Caja → Corrección de caja</td><td>Corregir una venta o un cobro mal cargado, sobre su turno original</td><td>Supervisor; el cajero sólo en su turno abierto</td></tr>
+          <tr><td class="ui">Corrección de caja</td><td>Caja → Corrección de caja</td><td>Corregir una venta, un cobro o un egreso mal cargado o que faltó, sobre su turno original</td><td>Supervisor; el cajero sólo en su turno abierto</td></tr>
         </tbody>
       </table>
     </div>
@@ -252,8 +253,21 @@
     <div class="note">Si el turno todavía está abierto, no hace falta esta opción: cargá la venta desde Ventas (POS) como siempre.</div>
   </section>
 
+  <section id="egreso">
+    <h2>7. Cargar un egreso que faltó</h2>
+    <p>Para cuando se pagó un gasto con plata del cajón, pero nunca se registró. Ejemplo: se compró hielo por Gs. 50.000 y el turno cerró con <span class="chip danger">Faltante Gs. 50.000</span>.</p>
+    <ol>
+      <li>Abrí el turno cerrado donde salió la plata y tocá <span class="ui">Cargar egreso que faltó</span> (arriba de la lista de movimientos).</li>
+      <li>En <span class="ui">Tipo de gasto</span> elegí el tipo de egreso (los de Caja → Tipos de Gasto).</li>
+      <li>Escribí un <strong>detalle</strong> (opcional) y el <strong>monto</strong>.</li>
+      <li>Escribí el motivo, mirá la vista previa y tocá <span class="ui">Cargar egreso</span>.</li>
+    </ol>
+    <p>El egreso queda en ese turno, con su caja, su cajero y la fecha y hora del cierre, y baja el efectivo esperado de ese cierre. No mueve la caja de hoy.</p>
+    <div class="note">Si el turno todavía está abierto, no hace falta esta opción: cargá el egreso como siempre. Si cargaste un egreso de más, corregilo o borralo desde <span class="ui">Registro Diario Caja</span> (pide motivo).</div>
+  </section>
+
   <section id="historial">
-    <h2>7. Historial y reportes</h2>
+    <h2>8. Historial y reportes</h2>
     <ul>
       <li>Al pie de cada turno está el <strong>historial de correcciones</strong>: cuándo, quién, qué cambió y el motivo.</li>
       <li>En la lista de turnos, los que tienen correcciones muestran cuántas, por ejemplo "3 correcciones".</li>
@@ -280,7 +294,7 @@
   </section>
 
   <section id="faq">
-    <h2>8. Preguntas frecuentes</h2>
+    <h2>9. Preguntas frecuentes</h2>
     <dl>
       <dt>¿Corregir algo de ayer cambia la caja que tengo abierta hoy?</dt>
       <dd>No. Sólo cambia el cierre del turno corregido. La caja de hoy se ajusta únicamente si corregís un movimiento de tu turno abierto.</dd>
@@ -303,7 +317,7 @@
   </section>
 
   <section id="permisos">
-    <h2>9. Para el administrador: permisos</h2>
+    <h2>10. Para el administrador: permisos</h2>
     <p>Se configuran en <span class="ui">Administración → Perfiles</span>. Después de cambiarlos, el usuario tiene que cerrar sesión y volver a entrar.</p>
     <div class="table-wrap">
       <table>

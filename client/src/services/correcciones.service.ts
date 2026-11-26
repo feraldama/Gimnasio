@@ -85,6 +85,15 @@ export interface TurnoDetalle {
   puedeCorregir: boolean;
   motivoNoCorregible: string | null;
   esSupervisor: boolean;
+  /** Tipos de egreso (TipoGastoId 1, sin apertura/cierre) para cargar uno faltante. */
+  gruposEgreso?: { TipoGastoGrupoId: number; TipoGastoGrupoDescripcion: string }[];
+}
+
+export interface EgresoFaltanteInput {
+  motivo: string;
+  TipoGastoGrupoId: number;
+  RegistroDiarioCajaMonto: number;
+  RegistroDiarioCajaDetalle?: string;
 }
 
 export interface VentaFaltanteInput {
@@ -189,5 +198,17 @@ export const cargarVentaFaltante = async (
     return r.data;
   } catch (e) {
     lanzar(e, "No se pudo cargar la venta");
+  }
+};
+
+export const cargarEgresoFaltante = async (
+  aperturaId: number,
+  data: EgresoFaltanteInput
+) => {
+  try {
+    const r = await api.post(`/correcciones/turno/${aperturaId}/egreso`, data);
+    return r.data;
+  } catch (e) {
+    lanzar(e, "No se pudo cargar el egreso");
   }
 };

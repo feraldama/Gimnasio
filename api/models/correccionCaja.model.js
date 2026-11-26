@@ -425,6 +425,70 @@ async function cargarVentaEnTurnoTx(
 }
 
 /**
+ * Carga en un turno YA CERRADO un egreso (gasto pagado con plata del cajón)
+ * que nunca se registró. Igual que la venta faltante: caja y usuario del
+ * turno, AperturaRef = su apertura, fecha = la del cierre, y no toca el cajón
+ * (ya se rindió). Así el esperado de ESE turno baja y su cierre cuadra.
+ */
+async function cargarEgresoEnTurnoTx(
+  conn,
+  { aperturaId, motivo, usuarioId, autorizar, egreso }
+) {
+  const turno = await turnoDeApertura(conn, aperturaId);
+  if (!turno) throw errorNegocio(404, "Turno no encontrado");
+  if (turno.abierto) {
+    throw errorNegocio(
+      409,
+      "El turno sigue abierto: cargá el egreso desde Pagos/Gastos como siempre"
+    );
+  }
+  exigir(autorizar, turno);
+
+  const [grupos] = await conn.query(
+    `SELECT TipoGastoGrupoDescripcion FROM tipogastogrupo
+     WHERE TipoGastoId = 1 AND TipoGastoGrupoId = ?`,
+    [egreso.TipoGastoGrupoId]
+  );
+  if (!grupos.length || Number(egreso.TipoGastoGrupoId) === 2) {
+    throw errorNegocio(400, "El tipo de gasto no existe o no es un egreso");
+  }
+  const detalle = egreso.detalle || grupos[0].TipoGastoGrupoDescripcion || "Egreso";
+
+  const [ins] = await conn.query(
+    `INSERT INTO registrodiariocaja (
+       CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+       RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId, AperturaRef
+     ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)`,
+    [
+      turno.cajaId,
+      fechaLocalSQL(turno.cierreFecha),
+      egreso.TipoGastoGrupoId,
+      detalle,
+      egreso.monto,
+      turno.usuarioId,
+      turno.aperturaId,
+    ]
+  );
+  const [rows] = await conn.query(
+    "SELECT * FROM registrodiariocaja WHERE RegistroDiarioCajaId = ?",
+    [ins.insertId]
+  );
+  const registro = rows[0];
+
+  const correccionId = await registrarCorreccion(conn, {
+    usuarioId,
+    entidad: "REGISTRO",
+    entidadId: registro.RegistroDiarioCajaId,
+    accion: "CARGAR",
+    turno,
+    motivo,
+    antes: null,
+    despues: registro,
+  });
+  return { correccionId, turno, registro };
+}
+
+/**
  * Prepara la edición/borrado de un movimiento desde Registro Diario Caja:
  * bloquea la fila y la caja, valida las reglas (utils/correccionCaja
  * validarCambioRegistro) y, si el turno está cerrado, exige motivo y permiso
@@ -535,5 +599,6 @@ module.exports = {
   anularVentaTx,
   anularPagoVinculadoTx,
   cargarVentaEnTurnoTx,
+  cargarEgresoEnTurnoTx,
   errorNegocio,
 };

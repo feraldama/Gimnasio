@@ -241,3 +241,31 @@ describe("validarCambioRegistro", () => {
     );
   });
 });
+
+describe("validarEgresoFaltante", () => {
+  const { validarEgresoFaltante } = require("../utils/correccionCaja");
+  test("egreso válido: grupo, monto redondeado y detalle sin espacios", () => {
+    assert.deepEqual(
+      validarEgresoFaltante({ TipoGastoGrupoId: "7", RegistroDiarioCajaMonto: 50000.4, RegistroDiarioCajaDetalle: "  Hielo  " }),
+      { egreso: { TipoGastoGrupoId: 7, monto: 50000, detalle: "Hielo" } }
+    );
+  });
+  test("el detalle es opcional", () => {
+    assert.equal(validarEgresoFaltante({ TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: 1000 }).egreso.detalle, "");
+  });
+  test("necesita tipo de gasto y no puede ser apertura/cierre", () => {
+    assert.match(validarEgresoFaltante({ RegistroDiarioCajaMonto: 1000 }).error, /tipo de gasto/);
+    assert.match(validarEgresoFaltante({ TipoGastoGrupoId: 2, RegistroDiarioCajaMonto: 1000 }).error, /tipo de gasto/);
+  });
+  test("el monto tiene que ser mayor a cero", () => {
+    assert.match(validarEgresoFaltante({ TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: 0 }).error, /monto/);
+    assert.match(validarEgresoFaltante({ TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: -5 }).error, /monto/);
+    assert.match(validarEgresoFaltante({ TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: "abc" }).error, /monto/);
+  });
+  test("detalle de más de 250 caracteres", () => {
+    assert.match(
+      validarEgresoFaltante({ TipoGastoGrupoId: 7, RegistroDiarioCajaMonto: 1, RegistroDiarioCajaDetalle: "x".repeat(251) }).error,
+      /250/
+    );
+  });
+});

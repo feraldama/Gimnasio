@@ -89,6 +89,15 @@ function ajustePorCorreccionesPosteriores(correcciones, registros, turno) {
           efectoEnEsperado(despues.TipoGastoId, despues.TipoGastoGrupoId, despues.RegistroDiarioCajaMonto) -
           efectoAntes;
       }
+    } else if (accion === "CARGAR" && c.CorreccionCajaEntidad === "REGISTRO") {
+      // Egreso cargado en el turno cerrado desde Corrección de caja. Si
+      // después se editó o borró, vale como está ahora (esas correcciones se
+      // saltean arriba por tener AperturaRef).
+      const id = Number(c.CorreccionCajaEntidadId);
+      const r = (registros || []).find(
+        (x) => Number(x.RegistroDiarioCajaId) === id && x.AperturaRef != null
+      );
+      if (r) ajuste += efectoEnEsperado(r.TipoGastoId, r.TipoGastoGrupoId, r.RegistroDiarioCajaMonto);
     } else if (accion === "CARGAR") {
       const ventaId = Number(c.CorreccionCajaEntidadId);
       for (const r of registros || []) {

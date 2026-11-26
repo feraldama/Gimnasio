@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Swal from "sweetalert2";
 import {
   ArrowsRightLeftIcon,
+  ArrowUpTrayIcon,
   TrashIcon,
   PlusIcon,
   XMarkIcon,
@@ -24,6 +25,7 @@ import { useFocusTrap } from "../../hooks/useFocusTrap";
 import {
   anularVentaCorreccion,
   cambiarMedioMovimiento,
+  cargarEgresoFaltante,
   cargarVentaFaltante,
   getTurnoParaCorreccion,
   getTurnosParaCorreccion,
@@ -46,8 +48,9 @@ import { addDaysLocal, formatDateLocal, formatMiles, todayLocalISO } from "../..
  * Corrección de caja.
  *
  * El cliente hace el control del cierre al día siguiente y encuentra que un
- * cobro se cargó como transferencia y era efectivo, una venta quedó duplicada
- * o un producto nunca se cargó. Esta pantalla corrige esos movimientos SOBRE
+ * cobro se cargó como transferencia y era efectivo, una venta quedó duplicada,
+ * un producto nunca se cargó o se pagó un gasto con plata del cajón sin
+ * registrarlo. Esta pantalla corrige esos movimientos SOBRE
  * SU TURNO ORIGINAL: el cierre de ayer queda cuadrado y la caja abierta hoy no
  * se toca. Cada corrección pide motivo y queda registrada.
  *
@@ -303,7 +306,8 @@ export default function CorreccionCajaPage() {
 type Accion =
   | { tipo: "medio"; registro: RegistroTurno; tipoMov: TipoMov }
   | { tipo: "anular"; venta: VentaTurno }
-  | { tipo: "cargar" };
+  | { tipo: "cargar" }
+  | { tipo: "egreso" };
 
 function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: () => void }) {
   const [data, setData] = useState<TurnoDetalle | null>(null);
@@ -406,7 +410,10 @@ function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: 
       )}
 
       {data.puedeCorregir && !turno.abierto && (
-        <div className="flex justify-end px-5 pb-4">
+        <div className="flex flex-wrap justify-end gap-2 px-5 pb-4">
+          <Button variant="secondary" leftIcon={ArrowUpTrayIcon} onClick={() => setAccion({ tipo: "egreso" })}>
+            Cargar egreso que faltó
+          </Button>
           <Button variant="secondary" leftIcon={PlusIcon} onClick={() => setAccion({ tipo: "cargar" })}>
             Cargar venta que faltó
           </Button>
@@ -414,7 +421,7 @@ function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: 
       )}
 
       {movimientos.length === 0 ? (
-        <EmptyState title="Sin movimientos" description="El turno no tiene ventas ni cobros." />
+        <EmptyState title="Sin movimientos" description="El turno no tiene ventas, cobros ni egresos." />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -527,6 +534,13 @@ function DetalleTurno({ aperturaId, onCambio }: { aperturaId: number; onCambio: 
           onHecho={() => despuesDeCorregir("Venta cargada en el turno")}
         />
       )}
+      {accion?.tipo === "egreso" && (
+        <ModalEgreso
+          detalle={data}
+          onClose={() => setAccion(null)}
+          onHecho={() => despuesDeCorregir("Egreso cargado en el turno")}
+        />
+      )}
     </Card>
   );
 }
@@ -540,6 +554,11 @@ function textoCorreccion(c: CorreccionRegistrada) {
     const despues = (c.CorreccionCajaDespues || {}) as Record<string, unknown>;
     const det = String(antes.RegistroDiarioCajaDetalle || `movimiento #${id}`);
     const montoAntes = Number(antes.RegistroDiarioCajaMonto) || 0;
+    if (accion === "CARGAR") {
+      // Egreso que faltó, cargado desde esta pantalla.
+      const cargado = String(despues.RegistroDiarioCajaDetalle || `movimiento #${id}`);
+      return `cargó el egreso "${cargado}" (Gs. ${formatMiles(Number(despues.RegistroDiarioCajaMonto) || 0)})`;
+    }
     if (accion === "ELIMINAR") {
       return `eliminó "${det}" (Gs. ${formatMiles(montoAntes)}) desde Registro Diario Caja`;
     }
@@ -1066,6 +1085,122 @@ function ModalCargar({
         </Button>
         <Button onClick={guardar} disabled={enviando || !valido}>
           {enviando ? "Cargando…" : "Cargar venta"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function ModalEgreso({
+  detalle,
+  onClose,
+  onHecho,
+}: {
+  detalle: TurnoDetalle;
+  onClose: () => void;
+  onHecho: () => void;
+}) {
+  const grupos = detalle.gruposEgreso || [];
+  const [grupo, setGrupo] = useState<number>(grupos[0]?.TipoGastoGrupoId ?? 0);
+  const [detalleTxt, setDetalleTxt] = useState("");
+  const [monto, setMonto] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const { enviando, error, enviar } = useEnvio();
+  const { turno } = detalle;
+
+  const montoNum = Math.round(Number(monto) || 0);
+  const registrosDespues: RegistroTurno[] =
+    montoNum > 0
+      ? [
+          ...detalle.registros,
+          {
+            RegistroDiarioCajaId: Number.MAX_SAFE_INTEGER,
+            CajaId: turno.cajaId,
+            UsuarioId: turno.usuarioId,
+            RegistroDiarioCajaFecha: turno.cierreFecha || turno.aperturaFecha,
+            RegistroDiarioCajaMonto: montoNum,
+            TipoGastoId: 1,
+            TipoGastoGrupoId: grupo,
+            RegistroDiarioCajaDetalle: detalleTxt,
+            AperturaRef: turno.aperturaId,
+          },
+        ]
+      : detalle.registros;
+
+  const valido = grupo > 0 && montoNum > 0 && motivo.trim().length >= 5;
+
+  const guardar = () =>
+    enviar(
+      () =>
+        cargarEgresoFaltante(turno.aperturaId, {
+          motivo,
+          TipoGastoGrupoId: grupo,
+          RegistroDiarioCajaMonto: montoNum,
+          RegistroDiarioCajaDetalle: detalleTxt.trim(),
+        }),
+      onHecho,
+    );
+
+  const claseCampo =
+    "mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text focus:border-brand-700 focus:outline-none focus:ring-1 focus:ring-brand-700";
+
+  return (
+    <Modal titulo="Cargar egreso que faltó" onClose={onClose} bloqueado={enviando}>
+      <p className="text-sm text-text-muted">
+        Un gasto que se pagó con plata del cajón y no se registró. Se carga en este turno (
+        {turno.cajaDescripcion}, {turno.usuarioNombre || turno.usuarioId}) con la fecha de su cierre y no mueve
+        la caja de hoy.
+      </p>
+
+      {grupos.length === 0 ? (
+        <p className="text-sm text-danger-700">
+          No hay tipos de egreso configurados. Cargalos en Caja → Tipos de Gasto.
+        </p>
+      ) : (
+        <label className="block text-sm font-medium text-text">
+          Tipo de gasto <span className="text-danger-700">*</span>
+          <select value={grupo} onChange={(e) => setGrupo(Number(e.target.value))} className={claseCampo}>
+            {grupos.map((g) => (
+              <option key={g.TipoGastoGrupoId} value={g.TipoGastoGrupoId}>
+                {g.TipoGastoGrupoDescripcion}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label className="block text-sm font-medium text-text">
+        Detalle
+        <input
+          type="text"
+          value={detalleTxt}
+          maxLength={250}
+          onChange={(e) => setDetalleTxt(e.target.value)}
+          placeholder="Ej.: compra de hielo"
+          className={claseCampo}
+        />
+      </label>
+
+      <label className="block text-sm font-medium text-text">
+        Monto Gs. <span className="text-danger-700">*</span>
+        <input
+          type="number"
+          min={1}
+          value={monto}
+          onChange={(e) => setMonto(e.target.value)}
+          className={`${claseCampo} text-right font-num`}
+        />
+      </label>
+
+      <CampoMotivo value={motivo} onChange={setMotivo} />
+      <Vista detalle={detalle} registrosDespues={registrosDespues} />
+      {error && <p className="text-sm text-danger-700">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose} disabled={enviando}>
+          Cancelar
+        </Button>
+        <Button onClick={guardar} disabled={enviando || !valido}>
+          {enviando ? "Cargando…" : "Cargar egreso"}
         </Button>
       </div>
     </Modal>

@@ -171,6 +171,16 @@ describe("correcciones desde Registro Diario Caja", () => {
     const c = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "EDITAR", CorreccionCajaAntes: egreso(10000), CorreccionCajaDespues: egreso(4000) };
     assert.equal(ajustePorCorreccionesPosteriores([c], [], turno).ajuste, 6000);
   });
+  test("cargar un egreso que faltó baja el esperado actual", () => {
+    const c = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "CARGAR", CorreccionCajaEntidadId: 500, CorreccionCajaAntes: null };
+    const regs = [{ ...egreso(8000), RegistroDiarioCajaId: 500, AperturaRef: 100 }];
+    assert.equal(ajustePorCorreccionesPosteriores([c], regs, turno).ajuste, -8000);
+  });
+  test("egreso cargado y después borrado desde Registro Diario: sin ajuste", () => {
+    const cargar = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "CARGAR", CorreccionCajaEntidadId: 500, CorreccionCajaAntes: null };
+    const borrar = { CierreId: 120, CorreccionCajaEntidad: "REGISTRO", CorreccionCajaAccion: "ELIMINAR", CorreccionCajaEntidadId: 500, CorreccionCajaAntes: { ...egreso(8000), RegistroDiarioCajaId: 500, AperturaRef: 100 } };
+    assert.equal(ajustePorCorreccionesPosteriores([cargar, borrar], [], turno).ajuste, 0);
+  });
   test("cierre viejo con el monto declarado corregido: vale el declarado original", () => {
     const cierre = { RegistroDiarioCajaId: 120, TipoGastoId: 1, TipoGastoGrupoId: 2, RegistroDiarioCajaMonto: 90000, DiferenciaCierre: null };
     const c = {

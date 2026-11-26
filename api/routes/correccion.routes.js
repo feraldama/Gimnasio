@@ -26,5 +26,6 @@ router.get("/turno/:aperturaId", LEER, ctrl.getTurno);
 router.post("/movimiento/:id/medio", CORREGIR, ctrl.cambiarMedio);
 router.post("/venta/:id/anular", CORREGIR, ctrl.anularVenta);
 router.post("/turno/:aperturaId/venta", CORREGIR, ctrl.cargarVenta);
+router.post("/turno/:aperturaId/egreso", CORREGIR, ctrl.cargarEgreso);
 
 module.exports = router;

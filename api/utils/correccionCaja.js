@@ -151,6 +151,30 @@ function validarMotivo(motivo) {
   return { motivo: m };
 }
 
+const DETALLE_MAX = 250;
+
+/**
+ * Valida el cuerpo de "cargar egreso que faltó" (gasto pagado con plata del
+ * cajón que nunca se registró). El tipo de gasto (TipoGastoId 1) lo verifica
+ * el modelo contra `tipogastogrupo`; acá sólo las reglas sin base de datos.
+ * @returns {{egreso:{TipoGastoGrupoId:number, monto:number, detalle:string}} | {error:string}}
+ */
+function validarEgresoFaltante(body = {}) {
+  const grupo = Number(body.TipoGastoGrupoId);
+  if (!Number.isInteger(grupo) || grupo <= 0 || grupo === 2) {
+    return { error: "Elegí el tipo de gasto del egreso" };
+  }
+  const monto = Math.round(Number(body.RegistroDiarioCajaMonto));
+  if (!Number.isFinite(monto) || monto <= 0) {
+    return { error: "El monto del egreso tiene que ser mayor a cero" };
+  }
+  const detalle = String(body.RegistroDiarioCajaDetalle ?? "").trim();
+  if (detalle.length > DETALLE_MAX) {
+    return { error: `El detalle no puede superar ${DETALLE_MAX} caracteres` };
+  }
+  return { egreso: { TipoGastoGrupoId: grupo, monto, detalle } };
+}
+
 /**
  * ¿El turno cerrado todavía se puede corregir? `dias` = plazo configurado
  * (CORRECCION_CAJA_DIAS). Se cuenta en días calendario locales desde el día
@@ -345,6 +369,7 @@ module.exports = {
   recalcularVentaTipo,
   deltaEfectivo,
   validarMotivo,
+  validarEgresoFaltante,
   dentroDePlazo,
   evaluarPermisoCorreccion,
 };
